@@ -1,10 +1,12 @@
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <glog/logging.h>
 
 #include <signal.h>
 #include <csignal>
 
 #include "caffe/util/signal_handler.h"
+
+using namespace boost::placeholders;
 
 namespace {
   static volatile sig_atomic_t got_sigint = false;

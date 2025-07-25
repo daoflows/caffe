@@ -7,11 +7,11 @@ list(APPEND Caffe_LINKER_LIBS PUBLIC ${PROTOBUF_LIBRARIES})
 
 # As of Ubuntu 14.04 protoc is no longer a part of libprotobuf-dev package
 # and should be installed separately as in: sudo apt-get install protobuf-compiler
-if(EXISTS ${PROTOBUF_PROTOC_EXECUTABLE})
-  message(STATUS "Found PROTOBUF Compiler: ${PROTOBUF_PROTOC_EXECUTABLE}")
-else()
-  message(FATAL_ERROR "Could not find PROTOBUF Compiler")
-endif()
+# if(EXISTS ${PROTOBUF_PROTOC_EXECUTABLE})
+#   message(STATUS "Found PROTOBUF Compiler: ${PROTOBUF_PROTOC_EXECUTABLE}")
+# else()
+#   message(FATAL_ERROR "Could not find PROTOBUF Compiler")
+# endif()
 
 if(PROTOBUF_FOUND)
   # fetches protobuf version

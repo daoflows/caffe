@@ -5,7 +5,7 @@ set(Caffe_DEFINITIONS "")
 set(Caffe_COMPILE_OPTIONS "")
 
 # ---[ Boost
-find_package(Boost 1.54 REQUIRED COMPONENTS system thread filesystem)
+find_package(Boost 1.54 REQUIRED COMPONENTS system thread filesystem python)
 list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${Boost_INCLUDE_DIRS})
 list(APPEND Caffe_LINKER_LIBS PUBLIC ${Boost_LIBRARIES})
 
@@ -29,25 +29,15 @@ if(USE_OPENMP)
   list(APPEND Caffe_COMPILE_OPTIONS PRIVATE ${OpenMP_CXX_FLAGS})
 endif()
 
-# ---[ Google-glog
-include("cmake/External/glog.cmake")
-list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${GLOG_INCLUDE_DIRS})
-list(APPEND Caffe_LINKER_LIBS PUBLIC ${GLOG_LIBRARIES})
-
-# ---[ Google-gflags
-include("cmake/External/gflags.cmake")
-list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${GFLAGS_INCLUDE_DIRS})
-list(APPEND Caffe_LINKER_LIBS PUBLIC ${GFLAGS_LIBRARIES})
-
 # ---[ Google-protobuf
 include(cmake/ProtoBuf.cmake)
 
 # ---[ HDF5
-find_package(HDF5 COMPONENTS HL REQUIRED)
-list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${HDF5_INCLUDE_DIRS})
-list(APPEND Caffe_LINKER_LIBS PUBLIC ${HDF5_LIBRARIES} ${HDF5_HL_LIBRARIES})
-
 # This code is taken from https://github.com/sh1r0/caffe-android-lib
+# find_package(HDF5 COMPONENTS HL REQUIRED)
+# list(APPEND Caffe_LINKER_LIBS PUBLIC HDF5::C HDF5::HL)
+# list(APPEND Caffe_DEFINITIONS PRIVATE -DUSE_HDF5)
+
 if(USE_HDF5)
   find_package(HDF5 COMPONENTS HL REQUIRED)
   include_directories(SYSTEM ${HDF5_INCLUDE_DIRS} ${HDF5_HL_INCLUDE_DIR})
@@ -68,9 +58,8 @@ endif()
 
 # ---[ LevelDB
 if(USE_LEVELDB)
-  find_package(LevelDB REQUIRED)
-  list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${LevelDB_INCLUDES})
-  list(APPEND Caffe_LINKER_LIBS PUBLIC ${LevelDB_LIBRARIES})
+  find_package(leveldb REQUIRED)
+  list(APPEND Caffe_LINKER_LIBS PUBLIC leveldb::leveldb)
   list(APPEND Caffe_DEFINITIONS PUBLIC -DUSE_LEVELDB)
 endif()
 
@@ -114,80 +103,41 @@ endif()
 
 # ---[ BLAS
 if(NOT APPLE)
-  set(BLAS "Atlas" CACHE STRING "Selected BLAS library")
+  set(BLAS "Open" CACHE STRING "Selected BLAS library")
   set_property(CACHE BLAS PROPERTY STRINGS "Atlas;Open;MKL")
 
-  if(BLAS STREQUAL "Atlas" OR BLAS STREQUAL "atlas")
-    find_package(Atlas REQUIRED)
-    list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${Atlas_INCLUDE_DIR})
-    list(APPEND Caffe_LINKER_LIBS PUBLIC ${Atlas_LIBRARIES})
-  elseif(BLAS STREQUAL "Open" OR BLAS STREQUAL "open")
-    find_package(OpenBLAS REQUIRED)
-    list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${OpenBLAS_INCLUDE_DIR})
-    list(APPEND Caffe_LINKER_LIBS PUBLIC ${OpenBLAS_LIB})
+  if(BLAS STREQUAL "Open" OR BLAS STREQUAL "open")
+    set(BLA_VENDOR OpenBLAS)
   elseif(BLAS STREQUAL "MKL" OR BLAS STREQUAL "mkl")
-    find_package(MKL REQUIRED)
-    list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${MKL_INCLUDE_DIR})
-    list(APPEND Caffe_LINKER_LIBS PUBLIC ${MKL_LIBRARIES})
+    set(BLA_VENDOR Intel10_64lp)
     list(APPEND Caffe_DEFINITIONS PUBLIC -DUSE_MKL)
   endif()
 elseif(APPLE)
-  find_package(vecLib REQUIRED)
-  list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${vecLib_INCLUDE_DIR})
-  list(APPEND Caffe_LINKER_LIBS PUBLIC ${vecLib_LINKER_LIBS})
+  set(BLA_VENDOR Apple)
+endif()
 
-  if(VECLIB_FOUND)
-    if(NOT vecLib_INCLUDE_DIR MATCHES "^/System/Library/Frameworks/vecLib.framework.*")
-      list(APPEND Caffe_DEFINITIONS PUBLIC -DUSE_ACCELERATE)
-    endif()
+if(APPLE)
+  if(NOT BLAS_LIBRARIES MATCHES "^/System/Library/Frameworks/vecLib.framework.*")
+    list(APPEND Caffe_DEFINITIONS PUBLIC -DUSE_ACCELERATE)
   endif()
 endif()
+
+find_package(BLAS REQUIRED)
+list(APPEND Caffe_LINKER_LIBS PRIVATE BLAS::BLAS)
 
 # ---[ Python
+find_package(Python3 COMPONENTS Interpreter Development NumPy REQUIRED)
+
 if(BUILD_python)
-  if(NOT "${python_version}" VERSION_LESS "3.0.0")
-    # use python3
-    find_package(PythonInterp 3.0)
-    find_package(PythonLibs 3.0)
-    find_package(NumPy 1.7.1)
-    # Find the matching boost python implementation
-    set(version ${PYTHONLIBS_VERSION_STRING})
-
-    STRING( REGEX REPLACE "[^0-9]" "" boost_py_version ${version} )
-    find_package(Boost 1.46 COMPONENTS "python-py${boost_py_version}")
-    set(Boost_PYTHON_FOUND ${Boost_PYTHON-PY${boost_py_version}_FOUND})
-
-    while(NOT "${version}" STREQUAL "" AND NOT Boost_PYTHON_FOUND)
-      STRING( REGEX REPLACE "([0-9.]+).[0-9]+" "\\1" version ${version} )
-
-      STRING( REGEX REPLACE "[^0-9]" "" boost_py_version ${version} )
-      find_package(Boost 1.46 COMPONENTS "python-py${boost_py_version}")
-      set(Boost_PYTHON_FOUND ${Boost_PYTHON-PY${boost_py_version}_FOUND})
-
-      STRING( REGEX MATCHALL "([0-9.]+).[0-9]+" has_more_version ${version} )
-      if("${has_more_version}" STREQUAL "")
-        break()
-      endif()
-    endwhile()
-    if(NOT Boost_PYTHON_FOUND)
-      find_package(Boost 1.46 COMPONENTS python)
-    endif()
-  else()
-    # disable Python 3 search
-    find_package(PythonInterp 2.7)
-    find_package(PythonLibs 2.7)
-    find_package(NumPy 1.7.1)
-    find_package(Boost 1.46 COMPONENTS python)
-  endif()
-  if(PYTHONLIBS_FOUND AND NUMPY_FOUND AND Boost_PYTHON_FOUND)
-    set(HAVE_PYTHON TRUE)
-    if(BUILD_python_layer)
-      list(APPEND Caffe_DEFINITIONS PRIVATE -DWITH_PYTHON_LAYER)
-      list(APPEND Caffe_INCLUDE_DIRS PRIVATE ${PYTHON_INCLUDE_DIRS} ${NUMPY_INCLUDE_DIR} PUBLIC ${Boost_INCLUDE_DIRS})
-      list(APPEND Caffe_LINKER_LIBS PRIVATE ${PYTHON_LIBRARIES} PUBLIC ${Boost_LIBRARIES})
-    endif()
+  set(HAVE_PYTHON TRUE)
+  if(BUILD_python_layer)
+    list(APPEND Caffe_DEFINITIONS PRIVATE -DWITH_PYTHON_LAYER)
+    list(APPEND Caffe_LINKER_LIBS PRIVATE Python3::Module Python3::NumPy)
   endif()
 endif()
+
+# find_package(Crc32c REQUIRED)
+# target_link_libraries(YOUR_TARGET Crc32c::crc32c)
 
 # ---[ Matlab
 if(BUILD_matlab)

@@ -22,15 +22,39 @@ endif()
 
 add_library(caffe ${srcs})
 caffe_default_properties(caffe)
-target_link_libraries(caffe ${Caffe_LINKER_LIBS})
-target_include_directories(caffe ${Caffe_INCLUDE_DIRS}
-                                 PUBLIC
-                                 $<BUILD_INTERFACE:${Caffe_INCLUDE_DIR}>
+target_link_libraries(caffe PUBLIC
+    ${Caffe_LINKER_LIBS}
+    ${Boost_LIBRARIES}
+    Boost::boost
+    ${PROTOBUF_LIBRARIES}
+    ${BLAS_LIBRARIES}
+    ${LEVELDB_LIBRARIES}
+    ${LMDB_LIBRARIES}
+    ${GLOG_LIBRARIES}
+    ${GFLAGS_LIBRARIES}
+    ${HDF5_LIBRARIES}
+    ${OPENCV_LIBRARIES}
+    ${CUDNN_LIBRARIES}
+    ${CURAND_LIBRARY}
+)
+target_include_directories(caffe PRIVATE ${Python3_INCLUDE_DIRS} ${Caffe_INCLUDE_DIRS}
+                                   PUBLIC
+                                   $<BUILD_INTERFACE:${Caffe_INCLUDE_DIR}>
                                  $<INSTALL_INTERFACE:include>)
 target_compile_definitions(caffe ${Caffe_DEFINITIONS})
 if(Caffe_COMPILE_OPTIONS)
   target_compile_options(caffe ${Caffe_COMPILE_OPTIONS})
 endif()
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"
+  OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "AppleClang")
+  target_link_options(caffe PUBLIC -Wl,-force_load $<TARGET_FILE:caffe>)
+elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  target_link_options(caffe PUBLIC -Wl,--whole-archive $<TARGET_FILE:caffe> -Wl,--no-whole-archive)
+elseif(MSVC)
+  target_link_options(caffe PUBLIC /WHOLEARCHIVE:$<TARGET_FILE:caffe>)
+endif()
+
 set_target_properties(caffe PROPERTIES
     VERSION   ${CAFFE_TARGET_VERSION}
     SOVERSION ${CAFFE_TARGET_SOVERSION}

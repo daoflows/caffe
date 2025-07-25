@@ -168,3 +168,4 @@ draft/
 # Conan
 conan.lock
 CMakeUserPresets.json
+.conan2/

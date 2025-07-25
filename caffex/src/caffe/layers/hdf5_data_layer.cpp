@@ -17,11 +17,12 @@ TODO:
 
 #include "caffe/layers/hdf5_data_layer.hpp"
 #include "caffe/util/hdf5.hpp"
+#include <random>
 
 namespace caffe {
 
 template <typename Dtype>
-HDF5DataLayer<Dtype>::~HDF5DataLayer<Dtype>() { }
+HDF5DataLayer<Dtype>::~HDF5DataLayer() { }
 
 // Load data and label from HDF5 filename into the class property blobs.
 template <typename Dtype>
@@ -62,7 +63,9 @@ void HDF5DataLayer<Dtype>::LoadHDF5FileData(const char* filename) {
 
   // Shuffle if needed.
   if (this->layer_param_.hdf5_data_param().shuffle()) {
-    std::random_shuffle(data_permutation_.begin(), data_permutation_.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(data_permutation_.begin(), data_permutation_.end(), g);
     DLOG(INFO) << "Successfully loaded " << hdf_blobs_[0]->shape(0)
                << " rows (shuffled)";
   } else {
@@ -105,7 +108,9 @@ void HDF5DataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   // Shuffle if needed.
   if (this->layer_param_.hdf5_data_param().shuffle()) {
-    std::random_shuffle(file_permutation_.begin(), file_permutation_.end());
+    std::random_device rd;
+    std::mt19937 g(std::random_device{}());
+    std::shuffle(file_permutation_.begin(), file_permutation_.end(), g);
   }
 
   // Load the first HDF5 file and initialize the line counter.
@@ -144,8 +149,9 @@ void HDF5DataLayer<Dtype>::Next() {
       if (current_file_ == num_files_) {
         current_file_ = 0;
         if (this->layer_param_.hdf5_data_param().shuffle()) {
-          std::random_shuffle(file_permutation_.begin(),
-                              file_permutation_.end());
+          std::random_device rd;
+          std::mt19937 g(rd());
+          std::shuffle(file_permutation_.begin(), file_permutation_.end(), g);
         }
         DLOG(INFO) << "Looping around to first file.";
       }
@@ -153,8 +159,11 @@ void HDF5DataLayer<Dtype>::Next() {
         hdf_filenames_[file_permutation_[current_file_]].c_str());
     }
     current_row_ = 0;
-    if (this->layer_param_.hdf5_data_param().shuffle())
-      std::random_shuffle(data_permutation_.begin(), data_permutation_.end());
+    if (this->layer_param_.hdf5_data_param().shuffle()) {
+      std::random_device rd;
+      std::mt19937 g(std::random_device{}());
+      std::shuffle(data_permutation_.begin(), data_permutation_.end(), g);
+    }
   }
   offset_++;
 }

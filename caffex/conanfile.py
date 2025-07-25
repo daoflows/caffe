@@ -18,23 +18,23 @@ class caffeRecipe(ConanFile):
             self.options.rm_safe("fPIC")
 
     def configure(self):
+        self.options['boost'].with_python = True
+        self.options["glog"].with_gflags = False
         if self.options.shared:
             self.options.rm_safe("fPIC")
 
     def requirements(self):
-        self.requires("protobuf/6.30.1")
-        self.requires('boost/1.76.0')
+        self.requires("protobuf/3.20.3")
+        self.requires('boost/[>=1.81.0]')
+        # self.requires('python/3.12.2')
+        # self.requires('Boost.Python/1.64.0@bincrafters/testing')
         self.requires('hdf5/1.12.0')
-        self.requires('lmdb/0.9.29')
-        self.requires('leveldb/1.22')
-        self.requires('glog/0.5.0')
-        self.requires('gflags/2.2.2')
-
-        if self.settings.os != 'Macos':
-            self.requires('openblas/0.3.17')
-
-        if self.options.tests:
-            self.requires('gtest/1.10.0')
+        # self.requires('glog/[>=0.5.0]')
+        # self.requires('gflags/[>=2.2.2]')
+        self.requires('glog/[>=0.5.0]')
+        self.requires('gflags/[>=2.2.2]')
+        # self.requires('lmdb/[>=0.9.29]')
+        # self.requires('leveldb/[>=1.22]')
 
     def build_requirements(self):
         self.tool_requires("protobuf/<host_version>")

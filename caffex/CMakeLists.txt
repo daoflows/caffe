@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 2.8.7)
-if(POLICY CMP0046)
-  cmake_policy(SET CMP0046 NEW)
-endif()
-if(POLICY CMP0054)
-  cmake_policy(SET CMP0054 NEW)
-endif()
+cmake_minimum_required(VERSION 3.25...4.0)
+# if(POLICY CMP0046)
+#   cmake_policy(SET CMP0046 NEW)
+# endif()
+# if(POLICY CMP0054)
+#   cmake_policy(SET CMP0054 NEW)
+# endif()
 
 # ---[ Caffe project
 project(Caffe C CXX)
@@ -27,18 +27,18 @@ include(cmake/Summary.cmake)
 include(cmake/ConfigGen.cmake)
 
 # ---[ Options
-caffe_option(CPU_ONLY  "Build Caffe without CUDA support" OFF) # TODO: rename to USE_CUDA
+caffe_option(CPU_ONLY  "Build Caffe without CUDA support" ON) # TODO: rename to USE_CUDA
 caffe_option(USE_CUDNN "Build Caffe with cuDNN library support" ON IF NOT CPU_ONLY)
 caffe_option(USE_NCCL "Build Caffe with NCCL library support" OFF)
 caffe_option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 caffe_option(BUILD_python "Build Python wrapper" ON)
-set(python_version "2" CACHE STRING "Specify which Python version to use")
+set(python_version "3" CACHE STRING "Specify which Python version to use")
 caffe_option(BUILD_matlab "Build Matlab wrapper" OFF IF UNIX OR APPLE)
-caffe_option(BUILD_docs   "Build documentation" ON IF UNIX OR APPLE)
+caffe_option(BUILD_docs "Build documentation" OFF) #ON IF UNIX OR APPLE)
 caffe_option(BUILD_python_layer "Build the Caffe Python layer" ON)
-caffe_option(USE_OPENCV "Build with OpenCV support" ON)
-caffe_option(USE_LEVELDB "Build with levelDB" ON)
-caffe_option(USE_LMDB "Build with lmdb" ON)
+caffe_option(USE_OPENCV "Build with OpenCV support" OFF)
+caffe_option(USE_LEVELDB "Build with levelDB" OFF)
+caffe_option(USE_LMDB "Build with lmdb" OFF)
 caffe_option(ALLOW_LMDB_NOLOCK "Allow MDB_NOLOCK when reading LMDB files (only if necessary)" OFF)
 caffe_option(USE_OPENMP "Link with OpenMP (when your BLAS wants OpenMP and you get linker errors)" OFF)
 
@@ -46,11 +46,25 @@ caffe_option(USE_OPENMP "Link with OpenMP (when your BLAS wants OpenMP and you g
 caffe_option(USE_HDF5 "Build with hdf5" ON)
 
 # ---[ Dependencies
+find_package(glog REQUIRED)
+add_definitions(${GLOG_DEFINITIONS})
+include_directories(${GLOG_INCLUDE_DIRS})
+link_libraries(${GLOG_LIBRARIES})
 include(cmake/Dependencies.cmake)
+find_package(Protobuf REQUIRED)
+find_package(Python3 COMPONENTS Development REQUIRED)
+include_directories(${Python3_INCLUDE_DIRS})
+set(PROTOBUF_GENERATE_CPP_APPEND_PATH ON)
+protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS src/caffe/proto/caffe.proto)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # ---[ Flags
 if(UNIX OR APPLE)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC -Wall")
+endif()
+
+if(MSVC)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8 /W3 /D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS /D_CRT_SECURE_NO_WARNINGS /DNOMINMAX /DHAVE_CXX11_ATOMIC /DOS_WINDOWS")
 endif()
 
 caffe_set_caffe_link()
@@ -92,8 +106,8 @@ endif()
 # ---[ Subdirectories
 add_subdirectory(src/gtest)
 add_subdirectory(src/caffe)
-add_subdirectory(tools)
-add_subdirectory(examples)
+# add_subdirectory(tools)
+# add_subdirectory(examples)
 add_subdirectory(python)
 add_subdirectory(matlab)
 add_subdirectory(docs)

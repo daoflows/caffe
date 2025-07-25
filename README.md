@@ -7,11 +7,12 @@
 `caffe_src` 来源于 [BVLC/caffe](https://github.com/BVLC/caffe)。
 
 ## 构建 caffe
-
+find_package(Python3 COMPONENTS Development REQUIRED)
 构建项目：
 ```bash
+conda install -c boost conda-forge hdf5 crc32c openblas glog=0.0.5 gflags protobuf=3.20.3
 conan profile detect --force
-conan install . -c tools.cmake.cmaketoolchain:generator=Ninja 
+conan install . -c tools.cmake.cmaketoolchain:generator=Ninja --build=missing
 cmake --preset conan-release
 cmake --build --preset conan-release
 ```
