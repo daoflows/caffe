@@ -169,3 +169,6 @@ draft/
 conan.lock
 CMakeUserPresets.json
 .conan2/
+
+# caffe_pb2
+./python/caffe_pb2.py

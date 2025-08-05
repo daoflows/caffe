@@ -21,11 +21,15 @@ pip install cmake -i https://pypi.tuna.tsinghua.edu.cn/simple
 pip install conan -i https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
-## 编译
+## 生成 Python 代码
 
 ```bash
+# 检测 Conan 环境
 conan profile detect --force
+# 安装依赖
 conan install . -c tools.cmake.cmaketoolchain:generator=Ninja --build=missing
+# 配置 CMake
 cmake --preset conan-release
+# 构建项目
 cmake --build --preset conan-release
 ```
