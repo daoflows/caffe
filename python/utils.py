@@ -151,7 +151,7 @@ class L2Norm(nn.Module):
             scale_shape = (1,)
         else:
             scale_shape = (self.num_channels,)
-        self.scale = nn.Parameter(scale_shape, name="scale")
+        self.scale = nn.Parameter(scale_shape, name="scale", init=relax.const(self.scale_init, dtype=None))
 
     def forward(self, x: relax.Expr) -> relax.Var:
         x_shape = _op.shape_of(x)

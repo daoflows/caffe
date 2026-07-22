@@ -12,7 +12,7 @@
 // these need to be included after boost on OS X
 #include <string>  // NOLINT(build/include_order)
 #include <vector>  // NOLINT(build/include_order)
-#include <fstream>  // NOLINT
+#include <fstream>
 
 #include "caffe/caffe.hpp"
 #include "caffe/layers/memory_data_layer.hpp"
@@ -32,9 +32,9 @@
     boost::python::type_id<shared_ptr<PTR > >(); \
   const boost::python::converter::registration* reg = \
     boost::python::converter::registry::query(info); \
-  if (reg == NULL) { \
+  if (reg == nullptr) { \
     bp::register_ptr_to_python<shared_ptr<PTR > >(); \
-  } else if ((*reg).m_to_python == NULL) { \
+  } else if ((*reg).m_to_python == nullptr) { \
     bp::register_ptr_to_python<shared_ptr<PTR > >(); \
   } \
 } while (0)
@@ -45,7 +45,7 @@ namespace caffe {
 
 // For Python, for now, we'll just always use float as the type.
 typedef float Dtype;
-const int NPY_DTYPE = NPY_FLOAT32;
+constexpr int NPY_DTYPE = NPY_FLOAT32;
 
 // Selecting mode.
 void set_mode_cpu() { Caffe::set_mode(Caffe::CPU); }
@@ -211,7 +211,7 @@ struct NdarrayConverterGenerator::apply<Dtype*> {
   struct type {
     PyObject* operator() (Dtype* data) const {
       // Just store the data pointer, and add the shape information in postcall.
-      return PyArray_SimpleNewFromData(0, NULL, NPY_DTYPE, data);
+      return PyArray_SimpleNewFromData(0, nullptr, NPY_DTYPE, data);
     }
     const PyTypeObject* get_pytype() {
       return &PyArray_Type;
@@ -278,10 +278,10 @@ class SolverCallback: public Solver<Dtype>::Callback {
  public:
   SolverCallback(bp::object on_start, bp::object on_gradients_ready)
     : on_start_(on_start), on_gradients_ready_(on_gradients_ready) { }
-  virtual void on_gradients_ready() {
+  void on_gradients_ready() override {
     on_gradients_ready_();
   }
-  virtual void on_start() {
+  void on_start() override {
     on_start_();
   }
 };
@@ -312,7 +312,7 @@ class NetCallback: public Net<Dtype>::Callback {
   explicit NetCallback(bp::object run) : run_(run) {}
 
  protected:
-  virtual void run(int layer) {
+  void run(int layer) override {
     run_(layer);
   }
   bp::object run_;

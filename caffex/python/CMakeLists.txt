@@ -10,7 +10,11 @@ add_library(pycaffe MODULE ${python_srcs})
 find_package(Boost REQUIRED COMPONENTS python3)
 include_directories(${Boost_INCLUDE_DIRS})
 caffe_default_properties(pycaffe)
-set_target_properties(pycaffe PROPERTIES PREFIX "" OUTPUT_NAME "_caffe")
+set_target_properties(pycaffe PROPERTIES
+  CXX_STANDARD 14
+  CXX_STANDARD_REQUIRED ON
+  PREFIX ""
+  OUTPUT_NAME "_caffe")
 target_link_libraries(pycaffe PRIVATE caffe Python3::Module Python3::NumPy boost::boost)
 if(MSVC)
   set_target_properties(pycaffe PROPERTIES SUFFIX ".pyd")
