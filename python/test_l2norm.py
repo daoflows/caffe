@@ -1,9 +1,12 @@
+import logging
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import caffe_pb2 as pb2
 from google.protobuf import text_format
+
+logger = logging.getLogger(__name__)
 
 try:
     from utils import L2Norm
@@ -105,22 +108,72 @@ norm_param {
 def _l2norm_numpy_ref(x, across_spatial, channel_shared, scale_init, eps=1e-10):
     if across_spatial:
         axis = (1, 2, 3)
+        mode = "ParseNet-style (across_spatial=True, sum over H,W,C)"
     else:
         axis = 1
-    norm = np.sqrt(np.sum(x ** 2, axis=axis, keepdims=True) + eps)
+        mode = "SSD-style (across_spatial=False, sum over C only)"
+
+    logger.info(
+        "[L2Norm-Ref] entry | shape=%s | dtype=%s | across_spatial=%s | "
+        "channel_shared=%s | scale_init=%.4f | eps=%.2e | mode=%s",
+        x.shape, x.dtype, across_spatial, channel_shared, scale_init, eps, mode,
+    )
+
+    x_sq = x ** 2
+    logger.debug(
+        "[L2Norm-Ref] x_sq stats | min=%.6f max=%.6f mean=%.6f",
+        float(np.min(x_sq)), float(np.max(x_sq)), float(np.mean(x_sq)),
+    )
+
+    sum_x_sq = np.sum(x_sq, axis=axis, keepdims=True)
+    logger.debug(
+        "[L2Norm-Ref] sum(x_sq) | axis=%s | sum_shape=%s | sum_min=%.6f sum_max=%.6f sum_mean=%.6f",
+        axis, sum_x_sq.shape, float(np.min(sum_x_sq)), float(np.max(sum_x_sq)), float(np.mean(sum_x_sq)),
+    )
+
+    norm = np.sqrt(sum_x_sq + eps)
+    logger.debug(
+        "[L2Norm-Ref] norm stats | min=%.6f max=%.6f mean=%.6f",
+        float(np.min(norm)), float(np.max(norm)), float(np.mean(norm)),
+    )
+
     x_norm = x / norm
+    logger.debug(
+        "[L2Norm-Ref] x_norm stats | min=%.6f max=%.6f mean=%.6f std=%.6f",
+        float(np.min(x_norm)), float(np.max(x_norm)), float(np.mean(x_norm)), float(np.std(x_norm)),
+    )
+
     if channel_shared:
         out = x_norm * scale_init
+        logger.debug(
+            "[L2Norm-Ref] scale applied: channel_shared | scale_init=%.4f",
+            scale_init,
+        )
     else:
         num_channels = x.shape[1]
         scale = np.ones((1, num_channels, 1, 1), dtype=x.dtype) * scale_init
         out = x_norm * scale
+        logger.debug(
+            "[L2Norm-Ref] scale applied: per-channel | num_channels=%d | scale_init=%.4f",
+            num_channels, scale_init,
+        )
+
+    logger.info(
+        "[L2Norm-Ref] exit | output_shape=%s | out_min=%.6f out_max=%.6f out_mean=%.6f",
+        out.shape, float(np.min(out)), float(np.max(out)), float(np.mean(out)),
+    )
     return out
 
 
 def _build_and_run_l2norm(x_np, num_channels, channel_shared, across_spatial, scale_init, eps):
     if not TVM_AVAILABLE:
         raise ImportError("TVM not available")
+
+    logger.info(
+        "[L2Norm-TVM] build start | shape=%s | num_channels=%d | "
+        "channel_shared=%s | across_spatial=%s | scale_init=%.4f | eps=%.2e",
+        x_np.shape, num_channels, channel_shared, across_spatial, scale_init, eps,
+    )
 
     l2norm = L2Norm(
         num_channels=num_channels,
@@ -143,8 +196,14 @@ def _build_and_run_l2norm(x_np, num_channels, channel_shared, across_spatial, sc
 
     x_tvm = tvm.nd.array(x_np)
     out_tvm = vm["main"](x_tvm)
+    out_np = out_tvm.numpy()
 
-    return out_tvm.numpy()
+    logger.info(
+        "[L2Norm-TVM] build done | output_shape=%s | out_min=%.6f out_max=%.6f out_mean=%.6f",
+        out_np.shape, float(np.min(out_np)), float(np.max(out_np)), float(np.mean(out_np)),
+    )
+
+    return out_np
 
 
 def test_l2norm_module_numerical_cross_channel():
@@ -216,7 +275,29 @@ def test_l2norm_module_across_spatial():
         return "SKIP"
 
 
+def configure_l2norm_logging(level=logging.DEBUG):
+    """配置 L2Norm 相关日志，方便排查 ParseNet/SSD 归一化问题。
+
+    Parameters
+    ----------
+    level : int
+        日志级别。默认 DEBUG 输出所有细节；INFO 只输出入口/出口。
+    """
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s | %(message)s",
+        datefmt="%H:%M:%S",
+    ))
+    for name in ("__main__", "utils", "test_l2norm"):
+        lg = logging.getLogger(name)
+        lg.setLevel(level)
+        lg.addHandler(handler)
+        lg.propagate = False
+
+
 if __name__ == "__main__":
+    configure_l2norm_logging(level=logging.DEBUG)
+
     tests = [
         test_normalize_parameter_proto,
         test_layer_parameter_norm_field,

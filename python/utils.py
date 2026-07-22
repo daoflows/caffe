@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Optional
 import tvm
@@ -5,6 +6,8 @@ from tvm import DataType, relax, tir
 from tvm.relax.testing import nn
 from tvm.script import ir as I, relax as R, tir as T
 from tvm.relax import op as _op
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Conv2D(nn.Module):
@@ -151,17 +154,64 @@ class L2Norm(nn.Module):
         self.scale = nn.Parameter(scale_shape, name="scale")
 
     def forward(self, x: relax.Expr) -> relax.Var:
+        x_shape = _op.shape_of(x)
+        x_dtype = x.struct_info.dtype
+        logger.info(
+            "[L2Norm] forward entry | name=%s | shape=%s | dtype=%s | "
+            "num_channels=%d | eps=%.2e | channel_shared=%s | across_spatial=%s | scale_init=%.4f",
+            self.name, x_shape, x_dtype, self.num_channels, self.eps,
+            self.channel_shared, self.across_spatial, self.scale_init,
+        )
+
         x_sq = _op.multiply(x, x)
+        logger.debug(
+            "[L2Norm] x_sq computed | name=%s | across_spatial=%s",
+            self.name, self.across_spatial,
+        )
+
         if self.across_spatial:
+            logger.debug(
+                "[L2Norm] sum axis: spatial (1,2,3) | name=%s | mode=ParseNet-style",
+                self.name,
+            )
             sum_val = _op.sum(x_sq, axis=[1, 2, 3], keepdims=True)
         else:
+            logger.debug(
+                "[L2Norm] sum axis: channel (1) | name=%s | mode=SSD-style (cross-channel)",
+                self.name,
+            )
             sum_val = _op.sum(x_sq, axis=1, keepdims=True)
-        eps_val = relax.const(self.eps, dtype=x.struct_info.dtype)
-        norm = _op.sqrt(_op.add(sum_val, eps_val))
+
+        eps_val = relax.const(self.eps, dtype=x_dtype)
+        sum_plus_eps = _op.add(sum_val, eps_val)
+        norm = _op.sqrt(sum_plus_eps)
+        logger.debug(
+            "[L2Norm] norm computed | name=%s | eps=%.2e",
+            self.name, self.eps,
+        )
+
         x_norm = _op.divide(x, norm)
+        logger.debug(
+            "[L2Norm] x_norm computed (x / norm) | name=%s",
+            self.name,
+        )
+
         if self.channel_shared:
             scale_reshaped = _op.reshape(self.scale, [1, 1, 1, 1])
+            logger.debug(
+                "[L2Norm] scale reshaped: channel_shared mode | name=%s | shape=[1,1,1,1]",
+                self.name,
+            )
         else:
             scale_reshaped = _op.reshape(self.scale, [1, -1, 1, 1])
+            logger.debug(
+                "[L2Norm] scale reshaped: per-channel mode | name=%s | shape=[1,%d,1,1]",
+                self.name, self.num_channels,
+            )
+
         out = _op.multiply(x_norm, scale_reshaped)
+        logger.info(
+            "[L2Norm] forward exit | name=%s | channel_shared=%s | across_spatial=%s",
+            self.name, self.channel_shared, self.across_spatial,
+        )
         return nn.emit(out, self.name)
