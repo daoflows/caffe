@@ -18,22 +18,21 @@ for specifying nets. In particular, the automatically generated layer names
 are not guaranteed to be forward-compatible.
 """
 
-from collections import OrderedDict, Counter
+from __future__ import annotations
+
+from collections import Counter, OrderedDict
+from dataclasses import dataclass
+from typing import Any
 
 from caffeproto import caffe_pb2
-from google import protobuf
 
 
 def param_name_dict():
     """Find out the correspondence between layer names and parameter names."""
 
     layer = caffe_pb2.LayerParameter()
-    # get all parameter names (typically underscore case) and corresponding
-    # type names (typically camel case), which contain the layer names
-    # (note that not all parameters correspond to layers, but we'll ignore that)
     param_names = [f.name for f in layer.DESCRIPTOR.fields if f.name.endswith('_param')]
     param_type_names = [type(getattr(layer, s)).__name__ for s in param_names]
-    # strip the final '_param' or 'Parameter'
     param_names = [s[:-len('_param')] for s in param_names]
     param_type_names = [s[:-len('Parameter')] for s in param_type_names]
     return dict(zip(param_type_names, param_names))
@@ -78,13 +77,13 @@ def assign_proto(proto, name, val):
         setattr(proto, name, val)
 
 
-class Top(object):
+@dataclass(slots=True)
+class Top:
     """A Top specifies a single output blob (which could be one of several
     produced by a layer.)"""
 
-    def __init__(self, fn, n):
-        self.fn = fn
-        self.n = n
+    fn: Any
+    n: int
 
     def to_proto(self):
         """Generate a NetParameter that contains all layers needed to compute
@@ -109,7 +108,6 @@ class Function(object):
         self.inputs = inputs
         self.params = params
         self.ntop = self.params.get('ntop', 1)
-        # use del to make sure kwargs are not double-processed as layer params
         if 'ntop' in self.params:
             del self.params['ntop']
         self.in_place = self.params.get('in_place', False)
@@ -150,13 +148,14 @@ class Function(object):
         layer.name = self._get_name(names, autonames)
 
         for k, v in self.params.items():
-            # special case to handle generic *params
             if k.endswith('param'):
                 assign_proto(layer, k, v)
             else:
                 try:
-                    assign_proto(getattr(layer,
-                        _param_names[self.type_name] + '_param'), k, v)
+                    assign_proto(
+                        getattr(layer, _param_names[self.type_name] + '_param'),
+                        k, v,
+                    )
                 except (AttributeError, KeyError):
                     assign_proto(layer, k, v)
 
@@ -218,10 +217,10 @@ class Parameters(object):
     to specify max pooling."""
 
     def __getattr__(self, name):
-       class Param:
+        class Param:
             def __getattr__(self, param_name):
                 return getattr(getattr(caffe_pb2, name + 'Parameter'), param_name)
-       return Param()
+        return Param()
 
 
 _param_names = param_name_dict()

@@ -11,37 +11,58 @@ Performance optimizations over the legacy io.Transformer:
 - In-place operations where safe to reduce memory allocations
 - Pre-allocated output buffers for oversample
 - OpenCV-fast path when available (cv2.resize is 5-10x faster than skimage)
+- Structured dataclasses for timing/stats collection with dict conversion for backward compatibility
 """
 
+import dataclasses
 import json
 import logging
+import sys
 import time
 from datetime import datetime, timezone
 
 import numpy as np
 
-logger = logging.getLogger(__name__)
-
 try:
     import cv2
     _HAS_CV2 = True
-    logger.debug("OpenCV detected - using cv2.resize for fast image resizing")
 except ImportError:
     _HAS_CV2 = False
-    from skimage.transform import resize as _sk_resize
-    from scipy.ndimage import zoom as _ndimage_zoom
-    logger.debug("OpenCV not available - falling back to skimage/scipy for resizing")
 
 import skimage.io
+
+if not _HAS_CV2:
+    from skimage.transform import resize as _sk_resize
+    from scipy.ndimage import zoom as _ndimage_zoom
+
+from .dataclasses import (
+    BatchInputInfo,
+    BatchTimingStats,
+    ChannelStats,
+    DataProcessorConfig,
+    ImageLoadInfo,
+    PerImageTiming,
+    TensorStats,
+    TimingStats,
+    TransformInfo,
+    TransformerConfig,
+    ValueHealthWarning,
+)
 
 try:
     from caffeproto import caffe_pb2
 except ImportError:
-    import sys
     if sys.version_info >= (3, 0):
         print("Failed to include caffe_pb2, things might go wrong!")
     else:
         raise
+
+logger = logging.getLogger(__name__)
+
+if _HAS_CV2:
+    logger.debug("OpenCV detected - using cv2.resize for fast image resizing")
+else:
+    logger.debug("OpenCV not available - falling back to skimage/scipy for resizing")
 
 
 ## ===== Proto / Datum / Ndarray Conversion =====
@@ -217,7 +238,6 @@ def resize_image(im, new_dims, interp='bilinear'):
                         for c in range(im.shape[2])]
             return np.stack(channels, axis=-1).astype(np.float32)
 
-    # Pure numpy/skimage fallback
     if isinstance(interp, str):
         order_map = {'nearest': 0, 'bilinear': 1, 'bicubic': 2, 'lanczos': 4}
         interp_order = order_map.get(interp, 1)
@@ -252,6 +272,8 @@ class Transformer:
     - In-place arithmetic where safe
     - Zero-copy path when no transforms are needed
     - Detailed debug/trace logging for each pipeline stage
+    - Public property accessors for transpose/channel_swap/raw_scale/mean/input_scale
+      (required for backward compatibility with Classifier/Detector)
 
     Parameters
     ----------
@@ -267,9 +289,51 @@ class Transformer:
         self._mean = {}
         self._input_scale = {}
         self._pipeline_cache = {}
+        self._configs = {}
         logger.info(f"Transformer initialized for {len(inputs)} input(s): {list(inputs.keys())}")
         for name, shape in inputs.items():
             logger.debug(f"  Input '{name}': shape={shape}")
+
+    @property
+    def transpose(self):
+        """Public accessor for per-input transpose config dict (backward compat)."""
+        return self._transpose
+
+    @property
+    def channel_swap(self):
+        """Public accessor for per-input channel_swap config dict (backward compat)."""
+        return self._channel_swap
+
+    @property
+    def raw_scale(self):
+        """Public accessor for per-input raw_scale config dict (backward compat)."""
+        return self._raw_scale
+
+    @property
+    def mean(self):
+        """Public accessor for per-input mean config dict (backward compat)."""
+        return self._mean
+
+    @property
+    def input_scale(self):
+        """Public accessor for per-input input_scale config dict (backward compat)."""
+        return self._input_scale
+
+    def _get_or_create_config(self, in_):
+        config = self._configs.get(in_)
+        if config is None:
+            config = TransformerConfig()
+            self._configs[in_] = config
+        return config
+
+    def _sync_config_from_dicts(self, in_):
+        """Sync TransformerConfig dataclass from the authoritative private dicts."""
+        config = self._get_or_create_config(in_)
+        config.transpose = self._transpose.get(in_)
+        config.channel_swap = self._channel_swap.get(in_)
+        config.raw_scale = self._raw_scale.get(in_)
+        config.mean = self._mean.get(in_)
+        config.input_scale = self._input_scale.get(in_)
 
     def _build_pipeline(self, in_):
         """Build and cache a list of (name, transform_fn) pairs for this input."""
@@ -335,7 +399,6 @@ class Transformer:
         t_cast = time.perf_counter() - t0
         in_dims = self.inputs[in_][2:]
 
-        # Resize if needed
         t_resize = 0.0
         if caffe_in.shape[:2] != in_dims:
             logger.debug(f"[preprocess:{in_}] resizing {caffe_in.shape[:2]} -> {tuple(in_dims)}")
@@ -343,7 +406,6 @@ class Transformer:
             caffe_in = resize_image(caffe_in, in_dims)
             t_resize = time.perf_counter() - t0
 
-        # Apply cached pipeline
         t_transforms = {}
         t_total_transforms = 0.0
         for name, fn in self._build_pipeline(in_):
@@ -355,7 +417,6 @@ class Transformer:
             logger.debug(f"[preprocess:{in_}] after {name}: shape={caffe_in.shape}, "
                          f"dtype={caffe_in.dtype}, {dt*1000:.3f}ms")
 
-        # Ensure C-contiguous for Caffe
         t_contig = 0.0
         if not caffe_in.flags['C_CONTIGUOUS']:
             t0 = time.perf_counter()
@@ -365,13 +426,14 @@ class Transformer:
         logger.debug(f"[preprocess:{in_}] output shape={caffe_in.shape}")
 
         if _return_timing:
-            timing = {
-                "cast_to_float32_ms": round(t_cast * 1000, 4),
-                "resize_ms": round(t_resize * 1000, 4),
-                "transforms_ms": t_transforms,
-                "transforms_total_ms": round(t_total_transforms * 1000, 4),
-                "contiguous_ms": round(t_contig * 1000, 4),
-            }
+            timing_stats = TimingStats(
+                cast_to_float32_ms=round(t_cast * 1000, 4),
+                resize_ms=round(t_resize * 1000, 4),
+                transforms_ms=t_transforms,
+                transforms_total_ms=round(t_total_transforms * 1000, 4),
+                contiguous_ms=round(t_contig * 1000, 4),
+            )
+            timing = dataclasses.asdict(timing_stats)
             return caffe_in, timing
         return caffe_in
 
@@ -399,43 +461,42 @@ class Transformer:
         if isinstance(images, np.ndarray) and images.ndim == 4:
             n = images.shape[0]
             logger.info(f"[preprocess_batch:{in_}] processing {n} images from 4D ndarray")
-            per_image_timing = []
+            per_image = []
             processed = []
             for i in range(n):
                 t0 = time.perf_counter()
                 result, step_timing = self.preprocess(in_, images[i], _return_timing=True)
                 dt = time.perf_counter() - t0
-                per_image_timing.append({
-                    "index": i,
-                    "total_ms": round(dt * 1000, 4),
-                    "cast_to_float32_ms": step_timing["cast_to_float32_ms"],
-                    "resize_ms": step_timing["resize_ms"],
-                    "transforms_total_ms": step_timing["transforms_total_ms"],
-                    "contiguous_ms": step_timing["contiguous_ms"],
-                })
+                per_image.append(PerImageTiming(
+                    index=i,
+                    total_ms=round(dt * 1000, 4),
+                    cast_to_float32_ms=step_timing["cast_to_float32_ms"],
+                    resize_ms=step_timing["resize_ms"],
+                    transforms_total_ms=step_timing["transforms_total_ms"],
+                    contiguous_ms=step_timing["contiguous_ms"],
+                ))
                 processed.append(result)
         else:
             n = len(images)
             logger.info(f"[preprocess_batch:{in_}] processing {n} images from list")
-            per_image_timing = []
+            per_image = []
             processed = []
             for i, img in enumerate(images):
                 t0 = time.perf_counter()
                 result, step_timing = self.preprocess(in_, img, _return_timing=True)
                 dt = time.perf_counter() - t0
-                per_image_timing.append({
-                    "index": i,
-                    "total_ms": round(dt * 1000, 4),
-                    "cast_to_float32_ms": step_timing["cast_to_float32_ms"],
-                    "resize_ms": step_timing["resize_ms"],
-                    "transforms_total_ms": step_timing["transforms_total_ms"],
-                    "contiguous_ms": step_timing["contiguous_ms"],
-                })
+                per_image.append(PerImageTiming(
+                    index=i,
+                    total_ms=round(dt * 1000, 4),
+                    cast_to_float32_ms=step_timing["cast_to_float32_ms"],
+                    resize_ms=step_timing["resize_ms"],
+                    transforms_total_ms=step_timing["transforms_total_ms"],
+                    contiguous_ms=step_timing["contiguous_ms"],
+                ))
                 processed.append(result)
 
         t_preprocess = time.perf_counter() - t0_total
 
-        # Stack into batch - pre-allocate for efficiency
         t0 = time.perf_counter()
         c, h, w = processed[0].shape
         batch = np.empty((n, c, h, w), dtype=np.float32)
@@ -445,8 +506,7 @@ class Transformer:
 
         t_total = time.perf_counter() - t0_total
 
-        # Aggregate per-image stats
-        preprocess_times = [p["total_ms"] for p in per_image_timing]
+        preprocess_times = [p.total_ms for p in per_image]
         logger.info(
             f"[preprocess_batch:{in_}] {n} images in {t_total*1000:.1f}ms "
             f"(stack: {t_stack*1000:.1f}ms) | "
@@ -458,16 +518,22 @@ class Transformer:
         logger.debug(f"[preprocess_batch:{in_}] output batch shape={batch.shape}")
 
         if _return_timing:
-            timing = {
-                "per_image": per_image_timing,
-                "per_image_stats_ms": {
-                    "avg": round(np.mean(preprocess_times), 4),
-                    "min": round(np.min(preprocess_times), 4),
-                    "max": round(np.max(preprocess_times), 4),
-                    "p50": round(np.median(preprocess_times), 4),
+            batch_stats = BatchTimingStats(
+                per_image=per_image,
+                per_image_stats_ms={
+                    "avg": round(float(np.mean(preprocess_times)), 4),
+                    "min": round(float(np.min(preprocess_times)), 4),
+                    "max": round(float(np.max(preprocess_times)), 4),
+                    "p50": round(float(np.median(preprocess_times)), 4),
                 },
-                "stack_ms": round(t_stack * 1000, 4),
-                "total_ms": round(t_total * 1000, 4),
+                stack_ms=round(t_stack * 1000, 4),
+                total_ms=round(t_total * 1000, 4),
+            )
+            timing = {
+                "per_image": [dataclasses.asdict(pi) for pi in per_image],
+                "per_image_stats_ms": batch_stats.per_image_stats_ms,
+                "stack_ms": batch_stats.stack_ms,
+                "total_ms": batch_stats.total_ms,
             }
             return batch, timing
         return batch
@@ -477,7 +543,6 @@ class Transformer:
         self.__check_input(in_)
         decaf_in = data.copy().squeeze()
 
-        # Apply inverse transforms in reverse order
         input_scale = self._input_scale.get(in_)
         mean = self._mean.get(in_)
         raw_scale = self._raw_scale.get(in_)
@@ -503,6 +568,7 @@ class Transformer:
             raise ValueError(f'Transpose order needs to have {len(self.inputs[in_]) - 1} dims')
         self._transpose[in_] = tuple(order)
         self._invalidate_cache(in_)
+        self._sync_config_from_dicts(in_)
         logger.info(f"[set_transpose:{in_}] order={order}")
 
     def set_channel_swap(self, in_, order):
@@ -512,6 +578,7 @@ class Transformer:
             raise ValueError(f'Channel swap needs {self.inputs[in_][1]} channels')
         self._channel_swap[in_] = tuple(order)
         self._invalidate_cache(in_)
+        self._sync_config_from_dicts(in_)
         logger.info(f"[set_channel_swap:{in_}] order={order}")
 
     def set_raw_scale(self, in_, scale):
@@ -519,6 +586,7 @@ class Transformer:
         self.__check_input(in_)
         self._raw_scale[in_] = float(scale)
         self._invalidate_cache(in_)
+        self._sync_config_from_dicts(in_)
         logger.info(f"[set_raw_scale:{in_}] scale={scale}")
 
     def set_mean(self, in_, mean):
@@ -549,6 +617,7 @@ class Transformer:
                 mean = mean.astype(np.float32)
         self._mean[in_] = mean
         self._invalidate_cache(in_)
+        self._sync_config_from_dicts(in_)
         logger.info(f"[set_mean:{in_}] mean shape={mean.shape}, range=[{mean.min():.3f}, {mean.max():.3f}]")
 
     def set_input_scale(self, in_, scale):
@@ -556,6 +625,7 @@ class Transformer:
         self.__check_input(in_)
         self._input_scale[in_] = float(scale)
         self._invalidate_cache(in_)
+        self._sync_config_from_dicts(in_)
         logger.info(f"[set_input_scale:{in_}] scale={scale}")
 
 
@@ -581,15 +651,14 @@ def oversample(images, crop_dims):
     im_center = im_shape / 2.0
     ch, cw = crop_dims
 
-    # Pre-compute crop coordinates: (5 crops) x (y0, x0, y1, x1)
     crops_ix = np.array([
-        [0, 0, ch, cw],                                    # top-left
-        [0, im_shape[1] - cw, ch, im_shape[1]],            # top-right
-        [im_shape[0] - ch, 0, im_shape[0], cw],            # bottom-left
-        [im_shape[0] - ch, im_shape[1] - cw,               # bottom-right
+        [0, 0, ch, cw],
+        [0, im_shape[1] - cw, ch, im_shape[1]],
+        [im_shape[0] - ch, 0, im_shape[0], cw],
+        [im_shape[0] - ch, im_shape[1] - cw,
          im_shape[0], im_shape[1]],
         [int(im_center[0] - ch / 2), int(im_center[1] - cw / 2),
-         int(im_center[0] + ch / 2), int(im_center[1] + cw / 2)],  # center
+         int(im_center[0] + ch / 2), int(im_center[1] + cw / 2)],
     ], dtype=np.intp)
 
     n_images = len(images)
@@ -601,7 +670,7 @@ def oversample(images, crop_dims):
             y0, x0, y1, x1 = crops_ix[i]
             crop = im[y0:y1, x0:x1, :]
             crops[base + i] = crop
-            crops[base + 5 + i] = crop[:, ::-1, :]  # horizontal flip (mirror)
+            crops[base + 5 + i] = crop[:, ::-1, :]
 
     logger.debug(f"oversample: {n_images} images -> {crops.shape[0]} crops, shape={crops.shape[1:]}")
     return crops
@@ -621,6 +690,11 @@ class DataProcessor:
     - INFO:  Pipeline entry/exit, batch-level timing, value range warnings
     - DEBUG: Per-image shapes, intermediate value stats, step-by-step timing
 
+    Uses dataclasses (TensorStats, ChannelStats, ValueHealthWarning, TimingStats,
+    PerImageTiming, BatchTimingStats, ImageLoadInfo, BatchInputInfo) internally
+    for structured data collection, then converts to legacy dict format at API
+    boundaries for 100% backward compatibility.
+
     Parameters
     ----------
     transformer : Transformer
@@ -635,8 +709,9 @@ class DataProcessor:
 
     def __init__(self, transformer, input_blob='data', json_log=False):
         self.transformer = transformer
-        self.input_blob = input_blob
         self._transformer = transformer
+        self.config = DataProcessorConfig(input_blob=input_blob, json_log=json_log)
+        self.input_blob = input_blob
         self._json_log = json_log
         self._json_records = [] if json_log else None
         input_shape = self._transformer.inputs[self.input_blob]
@@ -647,97 +722,173 @@ class DataProcessor:
             f"json_log: {'enabled' if json_log else 'disabled'}"
         )
 
-    # ── JSON structured logging ──────────────────────────────────────
+    @staticmethod
+    def _tensor_stats_to_legacy_dict(stats):
+        """Convert TensorStats dataclass to legacy nested dict format for JSON output."""
+        return {
+            "shape": list(stats.shape),
+            "ndim": int(stats.ndim),
+            "per_channel": [
+                {
+                    "channel": ch.channel,
+                    "min": float(ch.min),
+                    "max": float(ch.max),
+                    "mean": float(ch.mean),
+                    "std": float(ch.std),
+                }
+                for ch in stats.per_channel
+            ],
+            "global": {
+                "min": float(stats.global_min),
+                "max": float(stats.global_max),
+                "mean": float(stats.global_mean),
+                "std": float(stats.global_std),
+            },
+        }
 
     @staticmethod
-    def _collect_tensor_stats_dict(arr):
-        """Return a dict of per-channel and global stats for a tensor."""
+    def _value_health_warnings_to_legacy_list(warnings):
+        """Convert list[ValueHealthWarning] to legacy list[dict] format for JSON output.
+
+        Exact legacy format:
+        - NaN:  {"type": "NaN", "count": int, "message": str}
+        - Inf:  {"type": "Inf", "count": int, "message": str}
+        - high_zero_ratio: {"type": "high_zero_ratio", "ratio": float, "message": str}
+        - all_non_positive: {"type": "all_non_positive", "message": str}
+        """
+        result = []
+        for w in warnings:
+            wt = w.warning_type
+            if wt in ("NaN", "Inf"):
+                result.append({
+                    "type": wt,
+                    "count": int(w.count),
+                    "message": w.message,
+                })
+            elif wt == "high_zero_ratio":
+                result.append({
+                    "type": wt,
+                    "ratio": round(w.ratio, 4),
+                    "message": w.message,
+                })
+            elif wt == "all_non_positive":
+                result.append({
+                    "type": wt,
+                    "message": w.message,
+                })
+            else:
+                d = {"type": wt, "message": w.message}
+                if w.count:
+                    d["count"] = int(w.count)
+                if w.ratio:
+                    d["ratio"] = round(w.ratio, 4)
+                result.append(d)
+        return result
+
+    @staticmethod
+    def _collect_tensor_stats_as_dataclass(arr):
+        """Build a TensorStats dataclass from a numpy array (internal use)."""
         if arr.ndim == 4:
             per_channel = []
             for c in range(arr.shape[1]):
                 ch_data = arr[:, c, :, :]
-                per_channel.append({
-                    "channel": c,
-                    "min": float(ch_data.min()),
-                    "max": float(ch_data.max()),
-                    "mean": float(ch_data.mean()),
-                    "std": float(ch_data.std()),
-                })
-            return {
-                "shape": list(arr.shape),
-                "ndim": int(arr.ndim),
-                "per_channel": per_channel,
-                "global": {
-                    "min": float(arr.min()),
-                    "max": float(arr.max()),
-                    "mean": float(arr.mean()),
-                    "std": float(arr.std()),
-                },
-            }
+                per_channel.append(ChannelStats(
+                    channel=c,
+                    min=float(ch_data.min()),
+                    max=float(ch_data.max()),
+                    mean=float(ch_data.mean()),
+                    std=float(ch_data.std()),
+                ))
+            return TensorStats(
+                shape=list(arr.shape),
+                ndim=int(arr.ndim),
+                per_channel=per_channel,
+                global_min=float(arr.min()),
+                global_max=float(arr.max()),
+                global_mean=float(arr.mean()),
+                global_std=float(arr.std()),
+            )
         elif arr.ndim == 3:
             per_channel = []
             for c in range(arr.shape[0]):
                 ch_data = arr[c, :, :]
-                per_channel.append({
-                    "channel": c,
-                    "min": float(ch_data.min()),
-                    "max": float(ch_data.max()),
-                    "mean": float(ch_data.mean()),
-                    "std": float(ch_data.std()),
-                })
-            return {
-                "shape": list(arr.shape),
-                "ndim": int(arr.ndim),
-                "per_channel": per_channel,
-                "global": {
-                    "min": float(arr.min()),
-                    "max": float(arr.max()),
-                    "mean": float(arr.mean()),
-                    "std": float(arr.std()),
-                },
-            }
+                per_channel.append(ChannelStats(
+                    channel=c,
+                    min=float(ch_data.min()),
+                    max=float(ch_data.max()),
+                    mean=float(ch_data.mean()),
+                    std=float(ch_data.std()),
+                ))
+            return TensorStats(
+                shape=list(arr.shape),
+                ndim=int(arr.ndim),
+                per_channel=per_channel,
+                global_min=float(arr.min()),
+                global_max=float(arr.max()),
+                global_mean=float(arr.mean()),
+                global_std=float(arr.std()),
+            )
         else:
-            return {
-                "shape": list(arr.shape),
-                "ndim": int(arr.ndim),
-                "global": {
-                    "min": float(arr.min()),
-                    "max": float(arr.max()),
-                    "mean": float(arr.mean()),
-                    "std": float(arr.std()),
-                },
-            }
+            return TensorStats(
+                shape=list(arr.shape),
+                ndim=int(arr.ndim),
+                per_channel=[],
+                global_min=float(arr.min()),
+                global_max=float(arr.max()),
+                global_mean=float(arr.mean()),
+                global_std=float(arr.std()),
+            )
+
+    @staticmethod
+    def _collect_tensor_stats_dict(arr):
+        """Return a dict of per-channel and global stats for a tensor (legacy API)."""
+        stats = DataProcessor._collect_tensor_stats_as_dataclass(arr)
+        return DataProcessor._tensor_stats_to_legacy_dict(stats)
+
+    @staticmethod
+    def _collect_value_health_as_dataclass(arr):
+        """Build list[ValueHealthWarning] from a numpy array (internal use).
+
+        Uses ORIGINAL message strings for backward-compatible JSON output.
+        """
+        warnings = []
+        nan_count = int(np.isnan(arr).sum())
+        if nan_count > 0:
+            warnings.append(ValueHealthWarning(
+                warning_type="NaN",
+                count=nan_count,
+                message=f"NaN detected in {nan_count} elements",
+            ))
+        inf_count = int(np.isinf(arr).sum())
+        if inf_count > 0:
+            warnings.append(ValueHealthWarning(
+                warning_type="Inf",
+                count=inf_count,
+                message=f"Inf detected in {inf_count} elements",
+            ))
+        if arr.size > 0:
+            zero_ratio = float((arr == 0).sum() / arr.size)
+            zero_count = int((arr == 0).sum())
+            if zero_ratio > 0.5:
+                warnings.append(ValueHealthWarning(
+                    warning_type="high_zero_ratio",
+                    count=zero_count,
+                    ratio=zero_ratio,
+                    message=f"{zero_ratio*100:.1f}% zeros — possible dead input",
+                ))
+            if arr.min() < 0 and arr.max() <= 0:
+                warnings.append(ValueHealthWarning(
+                    warning_type="all_non_positive",
+                    count=int(arr.size),
+                    message="all values <= 0 — possible missing normalization",
+                ))
+        return warnings
 
     @staticmethod
     def _collect_value_health(arr):
-        """Return a list of warning strings for value health issues."""
-        warnings = []
-        if np.isnan(arr).any():
-            warnings.append({
-                "type": "NaN",
-                "count": int(np.isnan(arr).sum()),
-                "message": f"NaN detected in {int(np.isnan(arr).sum())} elements",
-            })
-        if np.isinf(arr).any():
-            warnings.append({
-                "type": "Inf",
-                "count": int(np.isinf(arr).sum()),
-                "message": f"Inf detected in {int(np.isinf(arr).sum())} elements",
-            })
-        if arr.size > 0:
-            zero_ratio = (arr == 0).sum() / arr.size
-            if zero_ratio > 0.5:
-                warnings.append({
-                    "type": "high_zero_ratio",
-                    "ratio": round(zero_ratio, 4),
-                    "message": f"{zero_ratio*100:.1f}% zeros — possible dead input",
-                })
-            if arr.min() < 0 and arr.max() <= 0:
-                warnings.append({
-                    "type": "all_non_positive",
-                    "message": "all values <= 0 — possible missing normalization",
-                })
-        return warnings
+        """Return a list of warning dicts for value health issues (legacy API)."""
+        warnings = DataProcessor._collect_value_health_as_dataclass(arr)
+        return DataProcessor._value_health_warnings_to_legacy_list(warnings)
 
     def _emit_json_record(self, record):
         """Append record to in-memory list and/or write to file."""
@@ -785,8 +936,6 @@ class DataProcessor:
         logger.info(f"[DataProcessor] flushed {count} JSON records to {path}")
         return count
 
-    # ── Text logging helpers (unchanged) ─────────────────────────────
-
     @staticmethod
     def _log_tensor_stats(label, arr, level='debug'):
         """Log per-channel min/max/mean/std for a (C, H, W) or (N, C, H, W) tensor."""
@@ -831,8 +980,6 @@ class DataProcessor:
             if arr.min() < 0 and arr.max() <= 0:
                 logger.warning(f"  [{label}] all values <= 0 — possible missing normalization?")
 
-    # ── Pipeline methods ─────────────────────────────────────────────
-
     def prepare_single(self, image):
         """
         Preprocess a single image for network input.
@@ -865,7 +1012,8 @@ class DataProcessor:
                 "load_dtype": str(image.dtype),
             }
 
-        self._log_tensor_stats('after_load', image.transpose(2, 0, 1) if image.ndim == 3 else image, level='debug')
+        after_load_img = image.transpose(2, 0, 1) if image.ndim == 3 else image
+        self._log_tensor_stats('after_load', after_load_img, level='debug')
 
         t0 = time.perf_counter()
         processed = self._transformer.preprocess(self.input_blob, image)
@@ -883,6 +1031,8 @@ class DataProcessor:
         )
 
         if self._json_log:
+            output_stats = self._collect_tensor_stats_as_dataclass(result)
+            output_warnings = self._collect_value_health_as_dataclass(result)
             self._emit_json_record({
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "operation": "prepare_single",
@@ -897,8 +1047,8 @@ class DataProcessor:
                     "dtype": str(result.dtype),
                     "memory_kb": round(result.nbytes / 1024, 1),
                 },
-                "stats": self._collect_tensor_stats_dict(result),
-                "warnings": self._collect_value_health(result),
+                "stats": self._tensor_stats_to_legacy_dict(output_stats),
+                "warnings": self._value_health_warnings_to_legacy_list(output_warnings),
             })
 
         return result
@@ -925,21 +1075,29 @@ class DataProcessor:
             f"target blob: '{self.input_blob}'"
         )
 
-        image_load_times = []  # for JSON: per-image load timing
+        image_loads = []
         loaded = []
         for i, img in enumerate(images):
             t0 = time.perf_counter()
             if isinstance(img, str):
                 loaded_img = load_image(img)
                 dt = time.perf_counter() - t0
-                image_load_times.append({"index": i, "load_ms": round(dt * 1000, 3), "shape": list(loaded_img.shape)})
+                image_loads.append(ImageLoadInfo(
+                    index=i,
+                    load_ms=round(dt * 1000, 3),
+                    shape=list(loaded_img.shape),
+                ))
                 logger.debug(
                     f"  [{i}/{n_total}] file load: {dt:.3f}s | "
                     f"shape={loaded_img.shape}"
                 )
             else:
                 loaded_img = img
-                image_load_times.append({"index": i, "load_ms": 0, "shape": list(loaded_img.shape)})
+                image_loads.append(ImageLoadInfo(
+                    index=i,
+                    load_ms=0,
+                    shape=list(loaded_img.shape),
+                ))
                 logger.debug(
                     f"  [{i}/{n_total}] array input: shape={loaded_img.shape}, "
                     f"dtype={loaded_img.dtype}"
@@ -963,6 +1121,7 @@ class DataProcessor:
             )
 
         t0 = time.perf_counter()
+        preprocess_timing = None
         if self._json_log:
             batch, preprocess_timing = self._transformer.preprocess_batch(
                 self.input_blob, loaded, _return_timing=True
@@ -982,6 +1141,16 @@ class DataProcessor:
         )
 
         if self._json_log:
+            batch_info = BatchInputInfo(
+                count=n_total,
+                files=n_files,
+                arrays=n_arrays,
+                image_loads=image_loads,
+                unique_shapes=sorted([list(s) for s in unique_shapes]),
+                mixed_shapes=mixed_shapes,
+            )
+            output_stats = self._collect_tensor_stats_as_dataclass(batch)
+            output_warnings = self._collect_value_health_as_dataclass(batch)
             record = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "operation": "prepare_batch",
@@ -991,20 +1160,23 @@ class DataProcessor:
                     "preprocess": round(t_pre * 1000, 3),
                 },
                 "input": {
-                    "count": n_total,
-                    "files": n_files,
-                    "arrays": n_arrays,
-                    "image_loads": image_load_times,
-                    "unique_shapes": sorted([list(s) for s in unique_shapes]),
-                    "mixed_shapes": mixed_shapes,
+                    "count": batch_info.count,
+                    "files": batch_info.files,
+                    "arrays": batch_info.arrays,
+                    "image_loads": [
+                        {"index": il.index, "load_ms": il.load_ms, "shape": il.shape}
+                        for il in batch_info.image_loads
+                    ],
+                    "unique_shapes": batch_info.unique_shapes,
+                    "mixed_shapes": batch_info.mixed_shapes,
                 },
                 "output": {
                     "shape": list(batch.shape),
                     "dtype": str(batch.dtype),
                     "memory_kb": round(batch.nbytes / 1024, 1),
                 },
-                "stats": self._collect_tensor_stats_dict(batch),
-                "warnings": self._collect_value_health(batch),
+                "stats": self._tensor_stats_to_legacy_dict(output_stats),
+                "warnings": self._value_health_warnings_to_legacy_list(output_warnings),
                 "preprocess_breakdown": preprocess_timing,
             }
             self._emit_json_record(record)
@@ -1064,11 +1236,12 @@ class DataProcessor:
             f"in {t_os:.3f}s | crop shape={all_crops.shape[1:]}"
         )
 
-        self._log_tensor_stats('crops_before_preprocess',
-                               all_crops.transpose(0, 3, 1, 2) if all_crops.ndim == 4 else all_crops,
-                               level='debug')
+        crops_before = (all_crops.transpose(0, 3, 1, 2)
+                        if all_crops.ndim == 4 else all_crops)
+        self._log_tensor_stats('crops_before_preprocess', crops_before, level='debug')
 
         t0 = time.perf_counter()
+        preprocess_timing = None
         if self._json_log:
             batch, preprocess_timing = self._transformer.preprocess_batch(
                 self.input_blob, all_crops, _return_timing=True
@@ -1088,6 +1261,8 @@ class DataProcessor:
         )
 
         if self._json_log:
+            output_stats = self._collect_tensor_stats_as_dataclass(batch)
+            output_warnings = self._collect_value_health_as_dataclass(batch)
             record = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "operation": "prepare_oversample",
@@ -1109,8 +1284,8 @@ class DataProcessor:
                     "dtype": str(batch.dtype),
                     "memory_kb": round(batch.nbytes / 1024, 1),
                 },
-                "stats": self._collect_tensor_stats_dict(batch),
-                "warnings": self._collect_value_health(batch),
+                "stats": self._tensor_stats_to_legacy_dict(output_stats),
+                "warnings": self._value_health_warnings_to_legacy_list(output_warnings),
                 "preprocess_breakdown": preprocess_timing,
             }
             self._emit_json_record(record)

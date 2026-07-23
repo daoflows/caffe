@@ -1,13 +1,14 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
+
 import tvm
 from tvm import DataType, relax, tir
-from tvm.relax.testing import nn
-from tvm.script import ir as I, relax as R, tir as T
 from tvm.relax import op as _op
+from tvm.relax.testing import nn
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Conv2D(nn.Module):
@@ -24,16 +25,14 @@ class Conv2D(nn.Module):
     out_layout: Optional[str] = None
     out_dtype: Optional[str | DataType] = None
     name: str = "conv2d"
-    define_subroutine: bool = True
+    define_subroutine: bool = field(default=True, repr=False)
 
     def __post_init__(self):
-        # Allow dynamic input channels.
         if isinstance(self.in_channels, int):
             in_channels = int(self.in_channels / self.groups)
         else:
             in_channels = tir.floordiv(self.in_channels, self.groups)
 
-        # Expand kernel size if provided an integer.
         if isinstance(self.kernel_size, int):
             self.kernel_size = [self.kernel_size] * 2
         else:
@@ -47,7 +46,7 @@ class Conv2D(nn.Module):
             self.bias = nn.Parameter((self.out_channels,), self.out_dtype, name="bias")
         else:
             self.bias = None
-    
+
     def forward(self, x: relax.Expr) -> relax.Var:
         conv_out = _op.nn.conv2d(
             data=x,
@@ -71,6 +70,7 @@ class Conv2D(nn.Module):
 
         return nn.emit(conv_out, self.name)
 
+
 @dataclass
 class ConvTranspose2D(nn.Module):
     """
@@ -90,16 +90,14 @@ class ConvTranspose2D(nn.Module):
     out_layout: Optional[str] = None
     out_dtype: Optional[str | DataType] = None
     name: str = "conv2d_transpose"
-    define_subroutine: bool = True
+    define_subroutine: bool = field(default=True, repr=False)
 
     def __post_init__(self):
-        # Allow dynamic output channels.
         if isinstance(self.in_channels, int):
             out_channels = int(self.out_channels / self.groups)
         else:
             out_channels = tir.floordiv(self.out_channels, self.groups)
 
-        # Expand kernel size if provided an integer.
         if isinstance(self.kernel_size, int):
             self.kernel_size = [self.kernel_size] * 2
         else:
@@ -136,6 +134,7 @@ class ConvTranspose2D(nn.Module):
                 raise NotImplementedError(f"Dont know how to handle layout {self.data_layout}.")
         return nn.emit(out, self.name)
 
+
 @dataclass
 class L2Norm(nn.Module):
     num_channels: int
@@ -144,14 +143,18 @@ class L2Norm(nn.Module):
     across_spatial: bool = False
     scale_init: float = 1.0
     name: str = "l2_norm"
-    define_subroutine: bool = True
+    define_subroutine: bool = field(default=True, repr=False)
 
     def __post_init__(self):
         if self.channel_shared:
             scale_shape = (1,)
         else:
             scale_shape = (self.num_channels,)
-        self.scale = nn.Parameter(scale_shape, name="scale", init=relax.const(self.scale_init, dtype=None))
+        self.scale = nn.Parameter(
+            scale_shape,
+            name="scale",
+            init=relax.const(self.scale_init, dtype=None),
+        )
 
     def forward(self, x: relax.Expr) -> relax.Var:
         x_shape = _op.shape_of(x)
