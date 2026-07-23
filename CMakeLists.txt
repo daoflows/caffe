@@ -6,7 +6,7 @@ find_package(Protobuf REQUIRED)
 
 # 定义 .proto 文件
 set(PROTO_FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/protos/caffe.proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/python/protos/caffe.proto
 )
 
 # 配置 Python 代码输出目录

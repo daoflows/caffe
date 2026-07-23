@@ -51,8 +51,7 @@ cmake --build --preset conan-release
 ### 方式三：直接调用 protoc
 
 ```bash
-protoc --proto_path=protos --python_out=python protos/caffe.proto
-protoc --proto_path=protos --python_out=python/protos protos/caffe.proto
+protoc --proto_path=python/protos --python_out=python/caffeproto python/protos/caffe.proto
 ```
 
 ## 添加新算子（四步法）
@@ -61,7 +60,7 @@ protoc --proto_path=protos --python_out=python/protos protos/caffe.proto
 
 ### 步骤1：扩展 Protocol Buffer 协议
 
-编辑 `protos/caffe.proto`：
+编辑 `python/protos/caffe.proto`：
 
 1. 在文件末尾（PReLUParameter 之后）添加新的 `XxxParameter` 消息定义
 2. 在 `LayerParameter` 消息中添加 `optional XxxParameter xxx_param = <next_id>;`

@@ -5,22 +5,21 @@ source /opt/conda/etc/profile.d/conda.sh
 conda activate pycaffe-py314
 export GLOG_minloglevel=2
 
-echo "=== Test 1: Basic import and data_processor ==="
+echo "=== Test 1: Basic import and io ==="
 python -c "
 import pycaffe
 print('pycaffe version:', pycaffe.__version__)
 print('Python version:', __import__('sys').version)
 print('TRAIN:', pycaffe.TRAIN, 'TEST:', pycaffe.TEST)
 print('DataProcessor:', pycaffe.DataProcessor)
-print('Transformer (new):', pycaffe.data_processor.Transformer)
-print('io.Transformer (legacy):', pycaffe.io.Transformer)
+print('Transformer:', pycaffe.io.Transformer)
 print('resize_image:', pycaffe.resize_image)
 print('load_image:', pycaffe.load_image)
 print('oversample:', pycaffe.oversample)
 print()
 
 import numpy as np
-from pycaffe.data_processor import resize_image, oversample, Transformer as FastTransformer
+from pycaffe.io import resize_image, oversample, Transformer as FastTransformer
 
 img = np.random.rand(100, 100, 3).astype(np.float32)
 resized = resize_image(img, (32, 32))

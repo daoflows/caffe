@@ -6,7 +6,7 @@ Classifier is an image classifier specialization of Net.
 import numpy as np
 
 from .pycaffe import Net
-from .proto.caffe_pb2 import TEST
+from caffeproto.caffe_pb2 import TEST
 from . import io
 
 

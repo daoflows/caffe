@@ -217,4 +217,10 @@ install(DIRECTORY python/pycaffe/
   PATTERN "*.py"
   PATTERN "*.cpp" EXCLUDE
   PATTERN "test" EXCLUDE
+  PATTERN "proto" EXCLUDE
+)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../caffeproto/
+  DESTINATION caffeproto
+  FILES_MATCHING
+  PATTERN "*.py"
 )

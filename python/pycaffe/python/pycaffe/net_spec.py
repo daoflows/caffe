@@ -20,7 +20,7 @@ are not guaranteed to be forward-compatible.
 
 from collections import OrderedDict, Counter
 
-from .proto import caffe_pb2
+from caffeproto import caffe_pb2
 from google import protobuf
 
 

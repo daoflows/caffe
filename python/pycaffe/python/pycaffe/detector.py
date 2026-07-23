@@ -17,7 +17,7 @@ import numpy as np
 import os
 
 from .pycaffe import Net
-from .proto.caffe_pb2 import TEST
+from caffeproto.caffe_pb2 import TEST
 from . import io
 
 
