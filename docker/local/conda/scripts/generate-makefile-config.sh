@@ -57,11 +57,11 @@ fi
 PY_LIB_NAME="python${PYTHON_VERSION}"
 
 cat > Makefile.config << EOF
-# Makefile.config for BVLC Caffe - Auto-generated for Docker (Ubuntu 22.04)
+# Makefile.config for BVLC Caffe - Auto-generated for Docker (Ubuntu 26.04)
 
 CPU_ONLY := 1
 
-OPENCV_VERSION := 3
+OPENCV_VERSION := 4
 
 CUDA_DIR := /usr/local/cuda
 CUDA_ARCH := -gencode arch=compute_35,code=sm_35 \\
@@ -73,7 +73,7 @@ CUDA_ARCH := -gencode arch=compute_35,code=sm_35 \\
 		-gencode arch=compute_80,code=sm_80 \\
 		-gencode arch=compute_86,code=sm_86
 
-BLAS := atlas
+BLAS := open
 
 PYTHON_LIBRARIES := ${BOOST_PYTHON_LIB} ${PY_LIB_NAME}
 PYTHON_INCLUDE := ${PYTHON_INCLUDE_DIR} \\
