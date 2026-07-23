@@ -11,14 +11,14 @@ print('pycaffe version:', pycaffe.__version__)
 print('Python version:', __import__('sys').version)
 print('TRAIN:', pycaffe.TRAIN, 'TEST:', pycaffe.TEST)
 print('DataProcessor:', pycaffe.DataProcessor)
-print('Transformer:', pycaffe.io.Transformer)
+print('Transformer:', pycaffe.transforms.Transformer)
 print('resize_image:', pycaffe.resize_image)
 print('load_image:', pycaffe.load_image)
 print('oversample:', pycaffe.oversample)
 print()
 
 import numpy as np
-from pycaffe.io import resize_image, oversample
+from pycaffe.transforms import resize_image, oversample
 
 img = np.random.rand(100, 100, 3).astype(np.float32)
 resized = resize_image(img, (32, 32))

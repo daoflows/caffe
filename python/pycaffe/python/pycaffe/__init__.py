@@ -4,6 +4,6 @@ from ._caffe import __version__
 from caffeproto.caffe_pb2 import TRAIN, TEST
 from .classifier import Classifier
 from .detector import Detector
-from . import io
-from .io import DataProcessor, Transformer, load_image, load_image_batch, resize_image, oversample
+from . import transforms
+from .transforms import DataProcessor, Transformer, load_image, load_image_batch, resize_image, oversample
 from .net_spec import layers, params, NetSpec, to_proto

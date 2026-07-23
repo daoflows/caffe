@@ -11,7 +11,7 @@ import numpy as np
 
 from ._caffe import Net, SGDSolver, NesterovSolver, AdaGradSolver, \
         RMSPropSolver, AdaDeltaSolver, AdamSolver, NCCL, Timer
-from . import io
+from . import transforms
 
 logger = logging.getLogger(__name__)
 

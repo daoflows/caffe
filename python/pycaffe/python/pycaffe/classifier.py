@@ -7,7 +7,7 @@ import numpy as np
 
 from .pycaffe import Net
 from caffeproto.caffe_pb2 import TEST
-from . import io
+from . import transforms
 
 
 class Classifier(Net):
@@ -29,7 +29,7 @@ class Classifier(Net):
 
         # configure pre-processing
         in_ = self.inputs[0]
-        self.transformer = io.Transformer(
+        self.transformer = transforms.Transformer(
             {in_: self.blobs[in_].data.shape})
         self.transformer.set_transpose(in_, (2, 0, 1))
         if mean is not None:
@@ -69,11 +69,11 @@ class Classifier(Net):
                            inputs[0].shape[2]),
                           dtype=np.float32)
         for ix, in_ in enumerate(inputs):
-            input_[ix] = io.resize_image(in_, self.image_dims)
+            input_[ix] = transforms.resize_image(in_, self.image_dims)
 
         if oversample:
             # Generate center, corner, and mirrored crops.
-            input_ = io.oversample(input_, self.crop_dims)
+            input_ = transforms.oversample(input_, self.crop_dims)
         else:
             # Take center crop.
             center = np.array(self.image_dims) / 2.0

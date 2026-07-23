@@ -18,7 +18,7 @@ import os
 
 from .pycaffe import Net
 from caffeproto.caffe_pb2 import TEST
-from . import io
+from . import transforms
 
 
 class Detector(Net):
@@ -41,7 +41,7 @@ class Detector(Net):
 
         # configure pre-processing
         in_ = self.inputs[0]
-        self.transformer = io.Transformer(
+        self.transformer = transforms.Transformer(
             {in_: self.blobs[in_].data.shape})
         self.transformer.set_transpose(in_, (2, 0, 1))
         if mean is not None:
@@ -73,7 +73,7 @@ class Detector(Net):
         # Extract windows.
         window_inputs = []
         for image_fname, windows in images_windows:
-            image = io.load_image(image_fname).astype(np.float32)
+            image = transforms.load_image(image_fname).astype(np.float32)
             for window in windows:
                 window_inputs.append(self.crop(image, window))
 
@@ -174,7 +174,7 @@ class Detector(Net):
             # collect with context padding and place in input
             # with mean padding
             context_crop = im[box[0]:box[2], box[1]:box[3]]
-            context_crop = io.resize_image(context_crop, (crop_h, crop_w))
+            context_crop = transforms.resize_image(context_crop, (crop_h, crop_w))
             crop = np.ones(self.crop_dims, dtype=np.float32) * self.crop_mean
             crop[pad_y:(pad_y + crop_h), pad_x:(pad_x + crop_w)] = context_crop
 

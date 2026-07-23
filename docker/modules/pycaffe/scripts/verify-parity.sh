@@ -349,7 +349,7 @@ blue "--- 6. io Functionality ---"
 run_python_test "io module: array_to_blobproto and blobproto_to_array" "
 import pycaffe
 import numpy as np
-from pycaffe.io import array_to_blobproto, blobproto_to_array
+from pycaffe.transforms import array_to_blobproto, blobproto_to_array
 # 创建测试数据
 data = np.random.randn(1, 3, 32, 32).astype(np.float32)
 # 转换为 blobproto
