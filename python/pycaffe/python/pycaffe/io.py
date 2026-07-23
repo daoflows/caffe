@@ -686,16 +686,13 @@ class DataProcessor:
 
     def __init__(self, transformer, input_blob='data', json_log=False):
         self.transformer = transformer
-        self._transformer = transformer
         self.config = DataProcessorConfig(input_blob=input_blob, json_log=json_log)
-        self.input_blob = input_blob
-        self._json_log = json_log
-        self._json_records = [] if json_log else None
-        input_shape = self._transformer.inputs[self.input_blob]
+        self._json_records: list | None = [] if self.config.json_log else None
+        input_shape = self.transformer.inputs[self.config.input_blob]
         logger.info(
             f"[DataProcessor] initialized for blob '{input_blob}' | "
             f"expected input shape: {input_shape} | "
-            f"total inputs: {list(self._transformer.inputs.keys())} | "
+            f"total inputs: {list(self.transformer.inputs.keys())} | "
             f"json_log: {'enabled' if json_log else 'disabled'}"
         )
 
@@ -871,9 +868,9 @@ class DataProcessor:
         """Append record to in-memory list and/or write to file."""
         if self._json_records is not None:
             self._json_records.append(record)
-        if isinstance(self._json_log, str):
+        if isinstance(self.config.json_log, str):
             try:
-                with open(self._json_log, 'a', encoding='utf-8') as f:
+                with open(self.config.json_log, 'a', encoding='utf-8') as f:
                     f.write(json.dumps(record, ensure_ascii=False) + '\n')
             except OSError as e:
                 logger.error(f"[DataProcessor] failed to write JSON log: {e}")
@@ -993,7 +990,7 @@ class DataProcessor:
         self._log_tensor_stats('after_load', after_load_img, level='debug')
 
         t0 = time.perf_counter()
-        processed = self._transformer.preprocess(self.input_blob, image)
+        processed = self.transformer.preprocess(self.config.input_blob, image)
         t_pre = time.perf_counter() - t0
         logger.info(f"[prepare_single] preprocess: {t_pre:.3f}s | output shape={processed.shape}")
 
@@ -1007,7 +1004,7 @@ class DataProcessor:
             f"final shape={result.shape} | memory={result.nbytes / 1024:.1f} KB"
         )
 
-        if self._json_log:
+        if self.config.json_log:
             output_stats = self._collect_tensor_stats_as_dataclass(result)
             output_warnings = self._collect_value_health_as_dataclass(result)
             self._emit_json_record({
@@ -1049,7 +1046,7 @@ class DataProcessor:
 
         logger.info(
             f"[prepare_batch] {n_total} images ({n_files} files, {n_arrays} arrays) | "
-            f"target blob: '{self.input_blob}'"
+            f"target blob: '{self.config.input_blob}'"
         )
 
         image_loads = []
@@ -1094,17 +1091,17 @@ class DataProcessor:
         if mixed_shapes:
             logger.warning(
                 f"[prepare_batch] mixed input shapes detected! "
-                f"Transformer will resize to {self._transformer.inputs[self.input_blob][2:]}"
+                f"Transformer will resize to {self.transformer.inputs[self.config.input_blob][2:]}"
             )
 
         t0 = time.perf_counter()
         preprocess_timing = None
-        if self._json_log:
-            batch, preprocess_timing = self._transformer.preprocess_batch(
-                self.input_blob, loaded, _return_timing=True
+        if self.config.json_log:
+            batch, preprocess_timing = self.transformer.preprocess_batch(
+                self.config.input_blob, loaded, _return_timing=True
             )
         else:
-            batch = self._transformer.preprocess_batch(self.input_blob, loaded)
+            batch = self.transformer.preprocess_batch(self.config.input_blob, loaded)
         t_pre = time.perf_counter() - t0
 
         self._log_tensor_stats('batch_output', batch, level='info')
@@ -1117,7 +1114,7 @@ class DataProcessor:
             f"shape={batch.shape} | memory={batch.nbytes / 1024:.1f} KB"
         )
 
-        if self._json_log:
+        if self.config.json_log:
             batch_info = BatchInputInfo(
                 count=n_total,
                 files=n_files,
@@ -1176,7 +1173,7 @@ class DataProcessor:
         n_total = len(images)
         n_files = sum(1 for img in images if isinstance(img, str))
 
-        input_shape = self._transformer.inputs[self.input_blob]
+        input_shape = self.transformer.inputs[self.config.input_blob]
         crop_h, crop_w = input_shape[2], input_shape[3]
 
         logger.info(
@@ -1219,12 +1216,12 @@ class DataProcessor:
 
         t0 = time.perf_counter()
         preprocess_timing = None
-        if self._json_log:
-            batch, preprocess_timing = self._transformer.preprocess_batch(
-                self.input_blob, all_crops, _return_timing=True
+        if self.config.json_log:
+            batch, preprocess_timing = self.transformer.preprocess_batch(
+                self.config.input_blob, all_crops, _return_timing=True
             )
         else:
-            batch = self._transformer.preprocess_batch(self.input_blob, all_crops)
+            batch = self.transformer.preprocess_batch(self.config.input_blob, all_crops)
         t_pre = time.perf_counter() - t0
 
         self._log_tensor_stats('oversample_output', batch, level='info')
@@ -1237,7 +1234,7 @@ class DataProcessor:
             f"shape={batch.shape} | memory={batch.nbytes / 1024:.1f} KB"
         )
 
-        if self._json_log:
+        if self.config.json_log:
             output_stats = self._collect_tensor_stats_as_dataclass(batch)
             output_warnings = self._collect_value_health_as_dataclass(batch)
             record = {
