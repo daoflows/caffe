@@ -379,6 +379,11 @@ bp::object NCCL_New_Uid() {
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(SolveOverloads, Solve, 0, 1);
 
 BOOST_PYTHON_MODULE(_caffe) {
+  // boost python expects a void (missing) return value, while import_array
+  // returns NULL for python3. import_array1() forces a void return value.
+  // Must be called before any class definitions that use NumPy types.
+  import_array1();
+
   // below, we prepend an underscore to methods that will be replaced
   // in Python
 
@@ -574,9 +579,6 @@ BOOST_PYTHON_MODULE(_caffe) {
     .add_property("ms", &Timer::MilliSeconds);
   BP_REGISTER_SHARED_PTR_TO_PYTHON(Timer);
 
-  // boost python expects a void (missing) return value, while import_array
-  // returns NULL for python3. import_array1() forces a void return value.
-  import_array1();
-}
+  }
 
 }  // namespace caffe

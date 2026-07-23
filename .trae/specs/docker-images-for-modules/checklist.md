@@ -1,0 +1,26 @@
+# Checklist
+
+- [x] `docker/modules/` 目录结构创建完成，包含 python-module/、pycaffe/、scripts/ 子目录
+- [x] `docker/modules/scripts/analyze-project.sh` 可执行，输出项目复盘分析（模块演进路线、关键文件清单、测试对标关系）
+- [x] `docker/modules/python-module/Dockerfile` 多阶段构建配置正确，包含 base-system、base-builder、builder、runtime 四个阶段
+- [x] `docker/modules/python-module/Dockerfile` 中 runtime 阶段正确安装所有 Python 运行时依赖
+- [x] `docker/modules/python-module/Dockerfile` 中 runtime 阶段包含 `python/` 目录（caffeproto/、operators/、protos/、scripts/、tests/）
+- [x] `docker/modules/python-module/scripts/verify-python-module.sh` 验证脚本覆盖 caffe 导入、caffeproto 导入、run_test.sh 执行
+- [x] `docker/modules/pycaffe/Dockerfile` 正确引用 `caffe-cpu:python-module` 作为基础镜像
+- [x] `docker/modules/pycaffe/Dockerfile` 中 pycaffe-builder 阶段正确构建 wheel 包
+- [x] `docker/modules/pycaffe/Dockerfile` 中 runtime 阶段正确安装 wheel 并配置环境变量（PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python）
+- [x] `docker/modules/pycaffe/scripts/verify-pycaffe.sh` 验证脚本覆盖 pycaffe 导入、API 测试、LeNet 推理
+- [x] `docker/modules/pycaffe/scripts/verify-parity.sh` 对标验证脚本：比对 pycaffe 与 caffex/python 的 Net/Solver/coord_map/draw/io 测试结果
+- [x] `docker/modules/Makefile` 支持 all、python-module、pycaffe、clean、analyze 目标
+- [x] `docker/modules/Makefile` 正确处理 pycaffe 依赖 python-module 的构建顺序
+- [x] `make analyze` 输出项目复盘分析报告
+- [x] python-module 镜像中 `python -c "import caffe; print(caffe.__version__)"` 成功执行
+- [x] python-module 镜像中 `python -c "from caffeproto import caffe_pb2; print('OK')"` 成功执行
+- [x] python-module 镜像中 `python/scripts/run_test.sh` 全部通过
+- [x] pycaffe 镜像中 `python -c "import pycaffe; print(pycaffe.__version__)"` 成功执行
+- [x] pycaffe 镜像中 `python -c "import pycaffe; print(pycaffe.TRAIN, pycaffe.TEST)"` 成功执行
+- [x] pycaffe 镜像中 `verify-parity.sh` 对标验证通过：Net 创建/前向/反向/保存/加载行为与 caffex/python 测试一致
+- [x] pycaffe 镜像中 `verify-parity.sh` 对标验证通过：Level/Stage 过滤行为与 caffex/python 测试一致
+- [x] pycaffe 镜像中 `verify-parity.sh` 对标验证通过：Solver 行为与 caffex/python 测试一致
+- [x] 两个镜像可独立运行，互不干扰
+- [x] 构建过程中输出项目复盘分析信息（模块演进路线、关键文件、测试对标关系）

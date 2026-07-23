@@ -131,9 +131,6 @@ find_library(OPENCV_IMGPROC opencv_imgproc
 find_library(OPENCV_IMGCODECS opencv_imgcodecs
   PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib
 )
-find_library(BOOST_SYSTEM_LIBRARY boost_system
-  PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib ${CONDA_ENV_PREFIX}/lib ${CONDA_PREFIX}/lib ${BOOST_ROOT}/lib
-)
 find_library(BOOST_THREAD_LIBRARY boost_thread
   PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib ${CONDA_ENV_PREFIX}/lib ${CONDA_PREFIX}/lib ${BOOST_ROOT}/lib
 )
@@ -202,7 +199,7 @@ target_link_libraries(_caffe PRIVATE
 set(_optional_libs
   HDF5_LIBRARY HDF5_HL_LIBRARY LEVELDB_LIBRARY LMDB_LIBRARY SNAPPY_LIBRARY
   OPENCV_CORE OPENCV_HIGHGUI OPENCV_IMGPROC OPENCV_IMGCODECS
-  BOOST_SYSTEM_LIBRARY BOOST_THREAD_LIBRARY BOOST_FILESYSTEM_LIBRARY
+  BOOST_THREAD_LIBRARY BOOST_FILESYSTEM_LIBRARY
 )
 foreach(_lib ${_optional_libs})
   if(${_lib})
