@@ -266,10 +266,11 @@ depth: standard
 - Python封装：[python/caffe/__init__.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/python/caffe/__init__.py)
 - C++测试：[tests/test_caffe_slim.cpp](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/tests/test_caffe_slim.cpp)
 - 构建配置：[CMakeLists.txt](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/CMakeLists.txt)
-- 新手构建避坑指南：[reports/caffe-build-pitfalls-guide.md](file:///d:/spaces/SpecWeave/external/chaos/caffe/reports/caffe-build-pitfalls-guide.md)
+- 新手构建避坑指南：[build-pitfalls-guide.md](build-pitfalls-guide.md)
 - pycaffe构建配置：[pycaffe/CMakeLists.txt](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/CMakeLists.txt)（tvm-ffi版本）
 - C++依赖瘦身模板：[spec/templates/cpp-dependency-slimming/](file:///d:/spaces/SpecWeave/spec/templates/cpp-dependency-slimming/)
 
 <!-- changelog -->
+- 2026-07-24 | docs | 迁移reports目录到.trae/specs/caffe-cpp-slim-tvm-ffi/，修正内部链接
 - 2026-07-24 | docs | 行动项推进：C++依赖瘦身spec模板确认完整（spec/templates/cpp-dependency-slimming/），pycaffe/CMakeLists.txt更新为tvm-ffi版本（legacy boost版本保留备份），复盘报告导出到reports目录，新增新手构建避坑指南
 - 2026-07-23 | refactor | Caffe框架tvm-ffi依赖瘦身优化完成：glog/boost/gflags彻底移除，替换为tvm-ffi，38层支持，C++ 45测试100%通过，Python推理验证通过

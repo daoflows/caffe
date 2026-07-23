@@ -1,7 +1,8 @@
 # Caffe C++ 核心瘦身优化验证清单
 
 > **状态**: ✅ 已完成（2026-07-23）
-> **复盘报告**: [retrospective-caffe-slim-tvm-ffi-20260723](../../../../../../.agents/docs/retrospective/reports/code-optimization/retrospective-caffe-slim-tvm-ffi-20260723/README.md)
+> **复盘报告**: [retrospective-20260723.md](retrospective-20260723.md)
+> **构建避坑指南**: [build-pitfalls-guide.md](build-pitfalls-guide.md)
 > **模板来源**: [cpp-dependency-slimming 模板](../../../../../../spec/templates/cpp-dependency-slimming/)
 
 ---

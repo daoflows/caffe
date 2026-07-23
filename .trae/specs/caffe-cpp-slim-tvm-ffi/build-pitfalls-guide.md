@@ -465,8 +465,8 @@ print('✅ Import OK')
 
 ## 📚 相关文档
 
-- 完整复盘报告：[retrospective-caffe-slim-tvm-ffi-20260723.md](file:///d:/spaces/SpecWeave/external/chaos/caffe/reports/retrospective-caffe-slim-tvm-ffi-20260723.md)
-- 项目Spec：[spec.md](file:///d:/spaces/SpecWeave/external/chaos/caffe/.trae/specs/caffe-cpp-slim-tvm-ffi/spec.md)
-- 验证清单：[checklist.md](file:///d:/spaces/SpecWeave/external/chaos/caffe/.trae/specs/caffe-cpp-slim-tvm-ffi/checklist.md)
-- 任务清单：[tasks.md](file:///d:/spaces/SpecWeave/external/chaos/caffe/.trae/specs/caffe-cpp-slim-tvm-ffi/tasks.md)
-- C++依赖瘦身模板：[cpp-dependency-slimming](file:///d:/spaces/SpecWeave/spec/templates/cpp-dependency-slimming/)
+- 完整复盘报告：[retrospective-20260723.md](retrospective-20260723.md)
+- 项目Spec：[spec.md](spec.md)
+- 验证清单：[checklist.md](checklist.md)
+- 任务清单：[tasks.md](tasks.md)
+- C++依赖瘦身模板：[spec/templates/cpp-dependency-slimming/](file:///d:/spaces/SpecWeave/spec/templates/cpp-dependency-slimming/)
