@@ -283,78 +283,59 @@ class Transformer:
 
     def __init__(self, inputs):
         self.inputs = inputs
-        self._transpose = {}
-        self._channel_swap = {}
-        self._raw_scale = {}
-        self._mean = {}
-        self._input_scale = {}
         self._pipeline_cache = {}
-        self._configs = {}
+        self._configs: dict[str, TransformerConfig] = {}
         logger.info(f"Transformer initialized for {len(inputs)} input(s): {list(inputs.keys())}")
         for name, shape in inputs.items():
+            self._configs[name] = TransformerConfig()
             logger.debug(f"  Input '{name}': shape={shape}")
 
     @property
     def transpose(self):
         """Public accessor for per-input transpose config dict (backward compat)."""
-        return self._transpose
+        return {k: v.transpose for k, v in self._configs.items() if v.transpose is not None}
 
     @property
     def channel_swap(self):
         """Public accessor for per-input channel_swap config dict (backward compat)."""
-        return self._channel_swap
+        return {k: v.channel_swap for k, v in self._configs.items() if v.channel_swap is not None}
 
     @property
     def raw_scale(self):
         """Public accessor for per-input raw_scale config dict (backward compat)."""
-        return self._raw_scale
+        return {k: v.raw_scale for k, v in self._configs.items() if v.raw_scale is not None}
 
     @property
     def mean(self):
         """Public accessor for per-input mean config dict (backward compat)."""
-        return self._mean
+        return {k: v.mean for k, v in self._configs.items() if v.mean is not None}
 
     @property
     def input_scale(self):
         """Public accessor for per-input input_scale config dict (backward compat)."""
-        return self._input_scale
-
-    def _get_or_create_config(self, in_):
-        config = self._configs.get(in_)
-        if config is None:
-            config = TransformerConfig()
-            self._configs[in_] = config
-        return config
-
-    def _sync_config_from_dicts(self, in_):
-        """Sync TransformerConfig dataclass from the authoritative private dicts."""
-        config = self._get_or_create_config(in_)
-        config.transpose = self._transpose.get(in_)
-        config.channel_swap = self._channel_swap.get(in_)
-        config.raw_scale = self._raw_scale.get(in_)
-        config.mean = self._mean.get(in_)
-        config.input_scale = self._input_scale.get(in_)
+        return {k: v.input_scale for k, v in self._configs.items() if v.input_scale is not None}
 
     def _build_pipeline(self, in_):
         """Build and cache a list of (name, transform_fn) pairs for this input."""
         if in_ in self._pipeline_cache:
             return self._pipeline_cache[in_]
 
+        config = self._configs[in_]
         transforms = []
-        if self._transpose.get(in_) is not None:
-            order = self._transpose[in_]
+        if config.transpose is not None:
+            order = config.transpose
             transforms.append(('transpose', lambda x, o=order: x.transpose(o)))
-        if self._channel_swap.get(in_) is not None:
-            swap = self._channel_swap[in_]
+        if config.channel_swap is not None:
+            swap = config.channel_swap
             transforms.append(('channel_swap', lambda x, s=swap: x[s, :, :]))
-        if self._raw_scale.get(in_) is not None:
-            rs = np.float32(self._raw_scale[in_])
+        if config.raw_scale is not None:
+            rs = np.float32(config.raw_scale)
             transforms.append(('raw_scale', lambda x, s=rs: x * s))
-        if self._mean.get(in_) is not None:
-            m = self._mean[in_]
+        if config.mean is not None:
+            m = config.mean
             transforms.append(('mean_subtract', lambda x, m=m: x - m))
-        if self._input_scale.get(in_) is not None:
-            is_ = np.float32(self._input_scale[in_])
+        if config.input_scale is not None:
+            is_ = np.float32(config.input_scale)
             transforms.append(('input_scale', lambda x, s=is_: x * s))
 
         self._pipeline_cache[in_] = transforms
@@ -543,11 +524,12 @@ class Transformer:
         self.__check_input(in_)
         decaf_in = data.copy().squeeze()
 
-        input_scale = self._input_scale.get(in_)
-        mean = self._mean.get(in_)
-        raw_scale = self._raw_scale.get(in_)
-        channel_swap = self._channel_swap.get(in_)
-        transpose = self._transpose.get(in_)
+        config = self._configs[in_]
+        input_scale = config.input_scale
+        mean = config.mean
+        raw_scale = config.raw_scale
+        channel_swap = config.channel_swap
+        transpose = config.transpose
 
         if input_scale is not None:
             decaf_in /= input_scale
@@ -566,9 +548,8 @@ class Transformer:
         self.__check_input(in_)
         if len(order) != len(self.inputs[in_]) - 1:
             raise ValueError(f'Transpose order needs to have {len(self.inputs[in_]) - 1} dims')
-        self._transpose[in_] = tuple(order)
+        self._configs[in_].transpose = tuple(order)
         self._invalidate_cache(in_)
-        self._sync_config_from_dicts(in_)
         logger.info(f"[set_transpose:{in_}] order={order}")
 
     def set_channel_swap(self, in_, order):
@@ -576,17 +557,15 @@ class Transformer:
         self.__check_input(in_)
         if len(order) != self.inputs[in_][1]:
             raise ValueError(f'Channel swap needs {self.inputs[in_][1]} channels')
-        self._channel_swap[in_] = tuple(order)
+        self._configs[in_].channel_swap = tuple(order)
         self._invalidate_cache(in_)
-        self._sync_config_from_dicts(in_)
         logger.info(f"[set_channel_swap:{in_}] order={order}")
 
     def set_raw_scale(self, in_, scale):
         """Set raw pixel scale factor (applied before mean subtraction)."""
         self.__check_input(in_)
-        self._raw_scale[in_] = float(scale)
+        self._configs[in_].raw_scale = float(scale)
         self._invalidate_cache(in_)
-        self._sync_config_from_dicts(in_)
         logger.info(f"[set_raw_scale:{in_}] scale={scale}")
 
     def set_mean(self, in_, mean):
@@ -615,17 +594,15 @@ class Transformer:
                 resized = resize_image(normal_mean.transpose((1, 2, 0)), in_shape[1:])
                 mean = resized.transpose((2, 0, 1)) * (m_max - m_min) + m_min
                 mean = mean.astype(np.float32)
-        self._mean[in_] = mean
+        self._configs[in_].mean = mean
         self._invalidate_cache(in_)
-        self._sync_config_from_dicts(in_)
         logger.info(f"[set_mean:{in_}] mean shape={mean.shape}, range=[{mean.min():.3f}, {mean.max():.3f}]")
 
     def set_input_scale(self, in_, scale):
         """Set input feature scale factor (applied after mean subtraction)."""
         self.__check_input(in_)
-        self._input_scale[in_] = float(scale)
+        self._configs[in_].input_scale = float(scale)
         self._invalidate_cache(in_)
-        self._sync_config_from_dicts(in_)
         logger.info(f"[set_input_scale:{in_}] scale={scale}")
 
 
