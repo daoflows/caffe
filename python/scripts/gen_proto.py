@@ -4,10 +4,10 @@ Caffe Proto Python 代码生成脚本
 功能：
 1. 检查 protoc 与 Python protobuf 版本一致性
 2. 自动查找 protoc 编译器
-3. 编译 caffe.proto 生成 caffe_pb2.py（到 python/ 和 python/protos/ 两个位置）
+3. 编译 caffe.proto 生成 caffe_pb2.py（到 caffeproto/ 和 protos/ 两个位置）
 
 使用方法：
-    python gen_proto.py
+    在 scripts/ 目录下执行: python gen_proto.py
 """
 import sys
 import os
@@ -225,10 +225,12 @@ def verify_generated(out_dirs):
 
 def main():
     script_dir = Path(__file__).parent.resolve()
-    proto_dir = str(script_dir / "protos")
+    # proto 文件位于项目根目录的 protos/ 下
+    proto_dir = str(script_dir.parent.parent / "protos")
+    # 输出到 caffeproto/ 和 protos/
     out_dirs = [
-        str(script_dir / "python"),
-        str(script_dir / "python" / "protos"),
+        str(script_dir.parent / "caffeproto"),
+        str(script_dir.parent / "protos"),
     ]
 
     print("=" * 50)

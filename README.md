@@ -30,7 +30,7 @@ pip install conan -i https://pypi.tuna.tsinghua.edu.cn/simple
 使用内置的 Python 生成脚本（自动检查版本一致性）：
 
 ```bash
-python gen_proto.py
+python python/scripts/gen_proto.py
 ```
 
 脚本会自动：查找 protoc → 检查版本一致性 → 编译 proto → 验证生成代码。
@@ -73,14 +73,14 @@ protoc --proto_path=protos --python_out=python/protos protos/caffe.proto
 ### 步骤2：重新生成 Python 代码
 
 ```bash
-python gen_proto.py
+python python/scripts/gen_proto.py
 ```
 
-脚本会自动检查版本一致性并生成代码到 `python/caffe_pb2.py` 和 `python/protos/caffe_pb2.py`。
+脚本会自动检查版本一致性并生成代码到 `python/caffeproto/caffe_pb2.py` 和 `python/protos/caffe_pb2.py`。
 
 ### 步骤3：实现 TVM Relax 模块
 
-在 `python/utils.py` 中添加继承 `nn.Module` 的算子类：
+在 `python/operators/layers.py` 中添加继承 `nn.Module` 的算子类：
 
 ```python
 @dataclass
@@ -106,7 +106,7 @@ class NewLayer(nn.Module):
 
 ### 步骤4：添加测试
 
-在 `python/` 目录下创建测试文件（参考 `test_l2norm.py`），包含：
+在 `python/` 目录下创建测试文件（参考 `tests/test_l2norm.py`），包含：
 
 1. **protobuf 序列化/反序列化测试**：验证 XxxParameter 字段正确序列化往返
 2. **text_format 解析测试**：验证 prototxt 文本格式正确解析
@@ -120,4 +120,4 @@ class NewLayer(nn.Module):
 - 不要在 `caffe_utils.py` 中添加特定层类型的分支逻辑
 - `repeated scalar` 字段用 `append()`，`repeated message` 字段用 `add()`
 - `text_format.Parse` 解析 `LayerParameter` 时不需要外层 `layer {}` 包装
-- 确保 protoc 版本与 Python protobuf runtime 兼容（运行 `python gen_proto.py` 会自动检查）
+- 确保 protoc 版本与 Python protobuf runtime 兼容（运行 `python python/scripts/gen_proto.py` 会自动检查）

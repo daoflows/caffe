@@ -1,4 +1,4 @@
-import caffe_pb2 as pb2
+from . import caffe_pb2 as pb2
 
 def _rebuild_layers(layers: list[pb2.LayerParameter]) -> None:
     """

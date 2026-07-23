@@ -1,15 +1,15 @@
 import logging
 import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
-import caffe_pb2 as pb2
+from caffeproto import caffe_pb2 as pb2
 from google.protobuf import text_format
 
 logger = logging.getLogger(__name__)
 
 try:
-    from utils import L2Norm
+    from operators.layers import L2Norm
     import tvm
     from tvm import relax
     TVM_AVAILABLE = True
@@ -288,7 +288,7 @@ def configure_l2norm_logging(level=logging.DEBUG):
         "%(asctime)s [%(levelname)s] %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     ))
-    for name in ("__main__", "utils", "test_l2norm"):
+    for name in ("__main__", "operators.layers", "test_l2norm"):
         lg = logging.getLogger(name)
         lg.setLevel(level)
         lg.addHandler(handler)

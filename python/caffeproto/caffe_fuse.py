@@ -2,7 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple
 from google.protobuf import text_format
-import caffe_pb2 as pb2
+from . import caffe_pb2 as pb2
 
 @dataclass
 class BatchNormParams:
@@ -126,7 +126,7 @@ def fuse_network(init_net: pb2.NetParameter, predict_net: pb2.NetParameter) -> T
     
 
 if __name__ == "__main__":
-    from caffe_utils import unity_struct
+    from .caffe_utils import unity_struct
     proto_file = "ResNet-50-deploy.prototxt"
     blob_file = "ResNet-50-model.caffemodel"
     # 加载网络定义和参数
