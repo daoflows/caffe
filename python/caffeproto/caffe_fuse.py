@@ -25,7 +25,10 @@ class ScaleParams:
 def get_bn_params(init_dict: Dict[str, Any], bn_layer: Any) -> BatchNormParams:
     blobs = init_dict[bn_layer.name].blobs
     inv_std = np.asarray(blobs[2].data, dtype=np.float32)
-    inv_std = 1.0 / inv_std if inv_std.size else 1.0
+    if inv_std.size:
+        inv_std = 1.0 / inv_std
+    else:
+        inv_std = np.array(1.0, dtype=np.float32)
 
     return BatchNormParams(
         mean=np.asarray(blobs[0].data, dtype=np.float32) * inv_std,
@@ -49,7 +52,7 @@ def fuse_layers(init_dict: Dict[str, Any], bn_layer: Any, scale_layer: Any) -> L
     scale_params = get_scale_params(init_dict, scale_layer)
     std_inv = 1.0 / np.sqrt(bn_params.var + bn_params.eps)
 
-    return [bn_params.mean, bn_params.var, bn_params.eps,
+    return [bn_params.mean, bn_params.var, np.array(bn_params.eps, dtype=np.float32),
             scale_params.gamma, scale_params.beta, std_inv]
 
 
@@ -92,7 +95,7 @@ def fuse_network(init_net: pb2.NetParameter, predict_net: pb2.NetParameter) -> T
     init_layers = init_net.layer if use_layer_field else init_net.layers
     init_layer_dict = {il.name: il for il in init_layers}
 
-    new_bn = {}
+    new_bn: Dict[str, Any] = {}
     new_layers, changed = _fuse_network(predict_net.layer, init_layer_dict, new_bn)
 
     predict_net.ClearField('layer')
