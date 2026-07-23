@@ -456,7 +456,7 @@ dataclass 重构知识图谱
 | **P2** | 性能基准测试 | 对比 dataclass 重构前后的内存使用和执行速度 | 性能优化 |
 | **P2** | 文档自动化生成 | 使用 sphinx 生成 API 文档，包含 dataclass 类型信息 | 文档质量 |
 | **P3** | CI/CD 集成 | 将测试集成到 CI 流程，自动验证 dataclass 变更 | 持续质量 |
-| **P3** | 渐进式迁移 | 在后续迭代中逐步将 Transformer 和 DataProcessor 完全转换为 dataclass | 代码现代化 |
+| **P3 (已完成)** | 渐进式迁移 | Transformer 改为 TransformerConfig 权威数据源（移除 5 个并行 dict）；DataProcessor 移除重复属性（_transformer、input_blob、_json_log），统一使用 self.config | 代码现代化 |
 
 ### 行动计划
 
@@ -467,6 +467,8 @@ dataclass 重构知识图谱
 | 3 | 在 Docker 中运行完整测试 | 当前用户 | 60 min | 待执行（当前环境无 Docker） |
 | 4 | 编写性能基准测试 | 当前用户 | 60 min | 待执行 |
 | 5 | **Windows 环境测试验证** | 当前用户 | 10 min | ✅ 已完成（64 个测试全部通过） |
+| 6 | **P3: Transformer dataclass-first 迁移** | 当前用户 | 20 min | ✅ 已完成（b6d3cfa8） |
+| 7 | **P3: DataProcessor 去重优化** | 当前用户 | 15 min | ✅ 已完成（b612efda） |
 
 ### 风险预警
 
