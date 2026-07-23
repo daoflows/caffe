@@ -1,0 +1,422 @@
+# ==============================================================================
+# BVLC Caffe Conda 多阶段 Dockerfile (CPU-only, Miniforge3 + Python 3.14)
+#
+# 与 Dockerfile（Ubuntu 22.04 + Python 3.10）并行存在，使用 conda 环境
+# 提供 Python 3.14 运行时支持。
+#
+# 关键技术决策：
+# - conda-forge 的 boost-python 最高仅支持 Python 3.13 (cp313)，无 cp314/cp314t 构建
+# - 因此从源码编译 Boost 1.87.0（首个原生支持 Python 3.14 的版本）的 Boost.Python 组件
+# - Boost.Python 是 header-heavy 库，仅需编译 libboost_python314.so 一个共享库
+# - 使用系统 g++ 11.4（即编译 Caffe 的编译器），保证 ABI 兼容
+# - protobuf 使用纯 Python 实现，避免 C++ 扩展与系统 libprotobuf.so 冲突
+#
+# 构建目标 (--target):
+#   pycaffe-builder-conda  构建 pycaffe wheel（Python 3.14 + conda）
+#   runtime-conda          完整运行时镜像（conda Python 3.14）
+#
+# 前置依赖：
+#   docker build --target builder -t caffe-cpu:builder \
+#     -f docker/local/conda/Dockerfile .
+#
+# 使用示例:
+#   docker build -t caffe-cpu:conda-py314 --target runtime-conda \
+#     -f docker/local/conda/Dockerfile.conda .
+# ==============================================================================
+
+# ==============================================================================
+# 阶段 1: pycaffe-builder-conda — 使用 conda Python 3.14 构建 pycaffe wheel
+# 基于 builder 镜像（Ubuntu 22.04），复用其系统 protobuf/glog/gflags 库
+# 安装 Miniforge3 提供 Python 3.14，从源码编译 Boost.Python for Python 3.14
+# ==============================================================================
+FROM caffe-cpu:builder AS pycaffe-builder-conda
+
+ARG BUILDER_USER=builder
+ARG BUILDER_UID=1001
+ARG BUILDER_GID=1001
+ARG WORKSPACE_DIR=/workspace
+ARG CONDA_ENV=pycaffe-py314
+ARG BOOST_VERSION=1.87.0
+
+LABEL stage=pycaffe-builder-conda
+LABEL maintainer="Caffe Conda Docker (Python 3.14)"
+LABEL description="PyCaffe wheel builder with conda Python 3.14 + source-built Boost.Python"
+
+USER root
+
+# 安装 Miniforge3（轻量级 conda）
+RUN set -eux; \
+    MINIFORGE_URL="https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"; \
+    wget -q "${MINIFORGE_URL}" -O /tmp/miniforge.sh; \
+    bash /tmp/miniforge.sh -b -p /opt/conda; \
+    rm /tmp/miniforge.sh; \
+    /opt/conda/bin/conda --version
+
+# 配置 conda 并创建 Python 3.14 环境（不通过 conda 安装 boost，将从源码编译）
+# 注意：
+# - 不安装 cxx-compiler：conda 的编译器使用 hermetic sysroot，不搜索系统 /usr/include，
+#   导致找不到 gflags/gflags.h、glog/logging.h 等 Caffe 依赖头文件。
+#   改用 builder 镜像中已有的系统 g++ 11.4（即编译 Caffe 本体的同一编译器），
+#   它天然搜索 /usr/include，与系统 protobuf/glog/gflags ABI 完全一致。
+# - 不安装 protobuf：使用 builder 的系统 C++ protobuf 3.12.4（兼容 caffe.pb.h）；
+#   Python protobuf 包通过 pip 安装，且设置 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+#   使用纯 Python 实现，避免与系统 libprotobuf.so 发生 C++ 符号冲突。
+# - 不安装 boost：从源码编译 Boost.Python for Python 3.14（conda-forge 无 cp314 构建）
+# - 显式约束 python_abi=*_cp314 以使用标准 GIL 版本 Python（非 free-threaded cp314t），
+#   free-threaded Python (PEP 703) 会导致 C 扩展（Boost.Python/libcaffe）段错误。
+RUN set -eux; \
+    /opt/conda/bin/conda config --set remote_read_timeout_secs 600; \
+    /opt/conda/bin/conda config --set remote_connect_timeout_secs 60; \
+    /opt/conda/bin/conda config --set remote_max_retries 5; \
+    for i in $(seq 1 3); do \
+        echo "=== Attempt $i/3: Creating conda environment (Python 3.14, standard GIL) ==="; \
+        /opt/conda/bin/conda create -y -n ${CONDA_ENV} \
+            python=3.14 \
+            'python_abi=*=*_cp314' \
+            cmake>=3.18 \
+            ninja \
+            numpy>=1.26 \
+            scikit-build-core \
+            pip \
+            setuptools \
+            wheel \
+            make \
+            && break || echo "Attempt $i failed, retrying..."; \
+        sleep 10; \
+    done; \
+    /opt/conda/bin/conda clean -afy
+
+# 创建 conda 激活脚本
+RUN echo "#!/bin/bash" > /usr/local/bin/activate-conda && \
+    echo "source /opt/conda/etc/profile.d/conda.sh" >> /usr/local/bin/activate-conda && \
+    echo "conda activate ${CONDA_ENV}" >> /usr/local/bin/activate-conda && \
+    chmod +x /usr/local/bin/activate-conda
+
+# 安装 Python 构建依赖（pip 包）
+# 注意：protobuf 限制版本范围以确保与 caffe_pb2.py 兼容（由 protoc 3.12.4 生成）
+SHELL ["/bin/bash", "-c"]
+RUN source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV} && \
+    pip install --no-cache-dir \
+        build \
+        cmake \
+        ninja \
+        'protobuf>=3.20,<6' \
+        'pyyaml>=6.0' \
+        'Pillow>=9.0' \
+        'scipy>=1.7' \
+        'scikit-image>=0.19' \
+        'matplotlib>=3.5' \
+        'h5py>=3.6' \
+        'networkx>=2.6' \
+        'pandas>=1.4' \
+        'python-dateutil>=2.8'
+
+# 从源码编译 Boost.Python for Python 3.14
+# Boost 1.87.0 是首个原生支持 Python 3.14 的版本。
+# 我们只编译 Boost.Python（--with-python），不需要编译整个 Boost 套件。
+# Boost.Python 的大部分代码是 header-only，只需要编译 libboost_python314.so 一个共享库。
+# 编译产物安装到 conda 环境的 lib/include 目录中，让 CMake find_package(Boost) 能找到。
+#
+# 关键：Boost.Build (b2) 通过 user-config.jam 的 "using python" 指令来定位 Python，
+# 不能仅靠 --with-python 参数或 include= 选项。必须正确配置 user-config.jam
+# 指定 Python 的根目录、include 目录和库路径。
+# 使用 Python sysconfig 动态获取 include/lib 路径，适配 Python 3.14t (free-threaded) 等变体。
+RUN set -eux; \
+    source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV}; \
+    CONDA_PREFIX_PATH="$(python -c 'import sys; print(sys.prefix)')"; \
+    PYTHON_BIN="${CONDA_PREFIX_PATH}/bin/python"; \
+    PYTHON_VERSION="$(${PYTHON_BIN} -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"; \
+    PYTHON_INCLUDE_DIR="$(${PYTHON_BIN} -c 'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')"; \
+    PYTHON_LDVERSION="$(${PYTHON_BIN} -c 'import sysconfig; print(sysconfig.get_config_var("LDVERSION") or sysconfig.get_config_var("VERSION"))')"; \
+    PYTHON_LIBDIR="$(${PYTHON_BIN} -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"; \
+    echo "=== Building Boost.Python ${BOOST_VERSION} for Python ${PYTHON_VERSION} ==="; \
+    echo "CONDA_PREFIX_PATH=${CONDA_PREFIX_PATH}"; \
+    echo "PYTHON_INCLUDE_DIR=${PYTHON_INCLUDE_DIR}"; \
+    echo "PYTHON_LDVERSION=${PYTHON_LDVERSION}"; \
+    echo "PYTHON_LIBDIR=${PYTHON_LIBDIR}"; \
+    ls "${PYTHON_INCLUDE_DIR}/pyconfig.h" || { echo "ERROR: pyconfig.h not found at ${PYTHON_INCLUDE_DIR}!"; ls ${CONDA_PREFIX_PATH}/include/python*; exit 1; }; \
+    cd /tmp; \
+    BOOST_UNDERSCORE=$(echo "${BOOST_VERSION}" | tr '.' '_'); \
+    BOOST_SRC_DIR="/tmp/boost_${BOOST_UNDERSCORE}"; \
+    BOOST_TARBALL="boost_${BOOST_UNDERSCORE}.tar.gz"; \
+    wget -q "https://archives.boost.io/release/${BOOST_VERSION}/source/${BOOST_TARBALL}" -O "${BOOST_TARBALL}"; \
+    tar xzf "${BOOST_TARBALL}"; \
+    cd "${BOOST_SRC_DIR}"; \
+    echo "=== Patching Boost.Python for Python 3.14 compatibility ==="; \
+    echo "Replacing direct ->ob_refcnt access with Py_REFCNT() macro..."; \
+    find libs/python/src -name '*.cpp' -exec grep -l '->ob_refcnt' {} \;; \
+    for f in $(find libs/python/src -name '*.cpp'); do \
+      sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)->ob_refcnt/Py_REFCNT(\1)/g' "$f"; \
+    done; \
+    echo "Checking for remaining ob_refcnt references..."; \
+    grep -rn 'ob_refcnt' libs/python/src/ || echo "All ob_refcnt references patched."; \
+    echo "=== Writing user-config.jam ==="; \
+    printf 'using python : %s\n  : %s\n  : %s\n  : %s\n  : <toolset>gcc ;\n' "${PYTHON_VERSION}" "${PYTHON_BIN}" "${PYTHON_INCLUDE_DIR}" "${CONDA_PREFIX_PATH}/lib" > /tmp/user-config.jam; \
+    cat /tmp/user-config.jam; \
+    ./bootstrap.sh --prefix="${CONDA_PREFIX_PATH}" --with-libraries=python; \
+    echo "=== Bootstrapped, building Boost.Python with b2 ==="; \
+    ./b2 install \
+        --with-python \
+        --user-config=/tmp/user-config.jam \
+        toolset=gcc \
+        cxxflags="-std=c++17 -fPIC -I${PYTHON_INCLUDE_DIR}" \
+        cflags="-fPIC -I${PYTHON_INCLUDE_DIR}" \
+        link=shared \
+        threading=multi \
+        variant=release \
+        -j$(nproc) \
+        -d1; \
+    echo "=== Boost.Python installed ==="; \
+    ls -la ${CONDA_PREFIX_PATH}/lib/libboost_python* 2>/dev/null || true; \
+    ls -la ${CONDA_PREFIX_PATH}/lib/libboost_numpy* 2>/dev/null || true; \
+    ls -la ${CONDA_PREFIX_PATH}/lib/cmake/boost_python* 2>/dev/null || true; \
+    echo ""; \
+    cd /tmp; \
+    rm -rf "${BOOST_SRC_DIR}" "${BOOST_TARBALL}" /tmp/user-config.jam
+
+# 确保 Caffe 编译产物中 libcaffe.so 符号链接存在
+RUN set -eux; \
+    ln -sf ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so.1.0.0 ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so; \
+    ldconfig
+
+# 复制 pycaffe 源码
+COPY python/pycaffe ${WORKSPACE_DIR}/pycaffe
+
+# 设置权限
+RUN mkdir -p ${WORKSPACE_DIR}/pycaffe/dist && \
+    chown -R ${BUILDER_USER}:${BUILDER_USER} ${WORKSPACE_DIR}/pycaffe
+
+USER ${BUILDER_USER}
+WORKDIR ${WORKSPACE_DIR}/pycaffe
+
+# 构建 pycaffe wheel（使用 conda Python 3.14 + 源码编译的 Boost.Python + 系统 g++ 编译器）
+# 使用系统 g++（Ubuntu 11.4）而非 conda cxx-compiler，因为：
+# 1. 系统 g++ 天然搜索 /usr/include，能找到 gflags/glog/protobuf 头文件
+# 2. 与编译 libcaffe.so 的编译器一致，ABI 完全兼容
+# 3. conda 仅提供 Python/NumPy 运行时和头文件，Boost.Python 从源码编译安装
+# CMake 变量说明：
+# - CAFFE_BUILD_DIR: Caffe 构建输出目录（含 libcaffe.so 和 caffe.pb.h）
+# - CONDA_ENV_PREFIX: conda 环境根路径（sys.prefix）
+# - CONDA_ENV_NAME: conda 环境名称，用于 RPATH 计算
+# - Boost_NO_SYSTEM_PATHS=OFF: 允许搜索系统路径中的 Boost 头文件（大部分是 header-only）
+# - Boost_INCLUDE_DIR/LIBRARY: 显式指定自编译的 Boost.Python 路径
+SHELL ["/bin/bash", "-c"]
+RUN source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV} && \
+    set -eux; \
+    echo "=== Python version ==="; \
+    python --version; \
+    echo ""; \
+    echo "=== Compilers ==="; \
+    /usr/bin/gcc --version | head -1; \
+    /usr/bin/g++ --version | head -1; \
+    echo ""; \
+    echo "=== System protobuf ==="; \
+    protoc --version 2>&1 || true; \
+    echo ""; \
+    echo "=== Boost.Python libraries ==="; \
+    ls -la $CONDA_PREFIX/lib/libboost_python* 2>/dev/null || true; \
+    echo ""; \
+    echo "=== Building pycaffe wheel (Python 3.14) ==="; \
+    CONDA_PREFIX_PATH="$(python -c 'import sys; print(sys.prefix)')"; \
+    PYTHON_VERSION="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"; \
+    PYTHON_INCLUDE_DIR="$(python -c 'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')"; \
+    PYTHON_LDVERSION="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LDVERSION") or sysconfig.get_config_var("VERSION"))')"; \
+    PYTHON_LIBDIR="$(python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"; \
+    PYTHON_LIBRARY="${PYTHON_LIBDIR}/libpython${PYTHON_LDVERSION}.so"; \
+    NUMPY_INCLUDE="$(python -c 'import numpy; print(numpy.get_include())')"; \
+    echo "CONDA_PREFIX_PATH=${CONDA_PREFIX_PATH}"; \
+    echo "PYTHON_VERSION=${PYTHON_VERSION}"; \
+    echo "PYTHON_INCLUDE_DIR=${PYTHON_INCLUDE_DIR}"; \
+    echo "PYTHON_LIBRARY=${PYTHON_LIBRARY}"; \
+    echo "NUMPY_INCLUDE=${NUMPY_INCLUDE}"; \
+    echo "CAFFE_BUILD_DIR=${WORKSPACE_DIR}/caffex/build"; \
+    export CC=/usr/bin/gcc; \
+    export CXX=/usr/bin/g++; \
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python; \
+    python -m build --wheel --outdir dist/ --no-isolation \
+      -C "cmake.define.CMAKE_C_COMPILER=/usr/bin/gcc" \
+      -C "cmake.define.CMAKE_CXX_COMPILER=/usr/bin/g++" \
+      -C "cmake.define.CAFFE_BUILD_DIR=${WORKSPACE_DIR}/caffex/build" \
+      -C "cmake.define.CONDA_ENV_PREFIX=${CONDA_PREFIX_PATH}" \
+      -C "cmake.define.CONDA_ENV_NAME=${CONDA_ENV}" \
+      -C "cmake.define.Python_EXECUTABLE=${CONDA_PREFIX_PATH}/bin/python" \
+      -C "cmake.define.Python_INCLUDE_DIR=${PYTHON_INCLUDE_DIR}" \
+      -C "cmake.define.Python_LIBRARY=${PYTHON_LIBRARY}" \
+      -C "cmake.define.Python_NumPy_INCLUDE_DIRS=${NUMPY_INCLUDE}" \
+      -C "cmake.define.BOOST_ROOT=${CONDA_PREFIX_PATH}" \
+      -C "cmake.define.Boost_INCLUDE_DIR=${CONDA_PREFIX_PATH}/include" \
+      -C "cmake.define.Boost_LIBRARYDIR=${CONDA_PREFIX_PATH}/lib"; \
+    echo ""; \
+    echo "=== pycaffe wheel built ==="; \
+    ls -lh dist/*.whl
+
+# ==============================================================================
+# 阶段 2: runtime-conda — 运行时镜像（conda Python 3.14）
+# 基于 builder 镜像（Ubuntu 22.04，已含所有系统库），安装 Miniforge3 提供 Python 3.14，
+# 从源码编译 Boost.Python for Python 3.14 作为运行时依赖
+# ==============================================================================
+FROM caffe-cpu:builder AS runtime-conda
+
+ARG BUILDER_USER=builder
+ARG BUILDER_UID=1001
+ARG BUILDER_GID=1001
+ARG WORKSPACE_DIR=/workspace
+ARG CONDA_ENV=pycaffe-py314
+ARG BOOST_VERSION=1.87.0
+
+LABEL maintainer="Caffe Conda Docker (Python 3.14)"
+LABEL description="BVLC Caffe CPU-only runtime with conda Python 3.14 + source-built Boost.Python"
+LABEL caffe.version="1.0"
+
+USER root
+
+# 安装 Miniforge3（轻量级 conda，默认安装到 /opt/conda）
+RUN set -eux; \
+    MINIFORGE_URL="https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"; \
+    wget -q "${MINIFORGE_URL}" -O /tmp/miniforge.sh; \
+    bash /tmp/miniforge.sh -b -p /opt/conda; \
+    rm /tmp/miniforge.sh; \
+    /opt/conda/bin/conda --version
+
+# 创建 conda Python 3.14 环境（运行时不需要 cmake/ninja/make 等构建工具）
+# 注意：不通过 conda 安装 protobuf（conda 的 protobuf 包含 C++ 库会与系统 libprotobuf.so 冲突）。
+# Python protobuf 包通过 pip 安装，并设置 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+# 使用纯 Python 实现避免 C++ 层冲突。
+# 不通过 conda 安装 boost：从源码编译 Boost.Python for Python 3.14（conda-forge 无 cp314 构建）
+# 显式约束 python_abi=*_cp314 以使用标准 GIL 版本 Python（非 free-threaded cp314t）
+RUN set -eux; \
+    /opt/conda/bin/conda config --set remote_read_timeout_secs 600; \
+    /opt/conda/bin/conda config --set remote_connect_timeout_secs 60; \
+    /opt/conda/bin/conda config --set remote_max_retries 5; \
+    for i in $(seq 1 3); do \
+        echo "=== Attempt $i/3: Creating runtime conda environment ==="; \
+        /opt/conda/bin/conda create -y -n ${CONDA_ENV} \
+            python=3.14 \
+            'python_abi=*=*_cp314' \
+            numpy>=1.26 \
+            && break || echo "Attempt $i failed, retrying..."; \
+        sleep 10; \
+    done; \
+    /opt/conda/bin/conda clean -afy
+
+# 创建 conda 激活脚本
+RUN echo "#!/bin/bash" > /usr/local/bin/activate-conda && \
+    echo "source /opt/conda/etc/profile.d/conda.sh" >> /usr/local/bin/activate-conda && \
+    echo "conda activate ${CONDA_ENV}" >> /usr/local/bin/activate-conda && \
+    chmod +x /usr/local/bin/activate-conda
+
+# 安装 pip 运行时依赖
+# protobuf 版本限制：>=3.20 <6 以确保与 caffe_pb2.py（由 protoc 3.12.4 生成）兼容
+SHELL ["/bin/bash", "-c"]
+RUN source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV} && \
+    pip install --no-cache-dir \
+        'protobuf>=3.20,<6' \
+        'pyyaml>=6.0' \
+        'Pillow>=9.0' \
+        'scipy>=1.7' \
+        'scikit-image>=0.19' \
+        'matplotlib>=3.5' \
+        'h5py>=3.6' \
+        'networkx>=2.6' \
+        'pandas>=1.4' \
+        'python-dateutil>=2.8'
+
+# 从源码编译 Boost.Python for Python 3.14（运行时）
+# 使用 sysconfig 动态获取 include 路径，适配 Python 3.14t (free-threaded)
+RUN set -eux; \
+    source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV}; \
+    CONDA_PREFIX_PATH="$(python -c 'import sys; print(sys.prefix)')"; \
+    PYTHON_BIN="${CONDA_PREFIX_PATH}/bin/python"; \
+    PYTHON_VERSION="$(${PYTHON_BIN} -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"; \
+    PYTHON_INCLUDE_DIR="$(${PYTHON_BIN} -c 'import sysconfig; print(sysconfig.get_config_var("INCLUDEPY"))')"; \
+    echo "=== Building Boost.Python ${BOOST_VERSION} for Python ${PYTHON_VERSION} (runtime) ==="; \
+    echo "PYTHON_INCLUDE_DIR=${PYTHON_INCLUDE_DIR}"; \
+    ls "${PYTHON_INCLUDE_DIR}/pyconfig.h" || { echo "ERROR: pyconfig.h not found!"; ls ${CONDA_PREFIX_PATH}/include/python*; exit 1; }; \
+    cd /tmp; \
+    BOOST_UNDERSCORE=$(echo "${BOOST_VERSION}" | tr '.' '_'); \
+    BOOST_SRC_DIR="/tmp/boost_${BOOST_UNDERSCORE}"; \
+    BOOST_TARBALL="boost_${BOOST_UNDERSCORE}.tar.gz"; \
+    wget -q "https://archives.boost.io/release/${BOOST_VERSION}/source/${BOOST_TARBALL}" -O "${BOOST_TARBALL}"; \
+    tar xzf "${BOOST_TARBALL}"; \
+    cd "${BOOST_SRC_DIR}"; \
+    echo "=== Patching Boost.Python for Python 3.14 compatibility (runtime) ==="; \
+    for f in $(find libs/python/src -name '*.cpp'); do \
+      sed -i 's/\([a-zA-Z_][a-zA-Z0-9_]*\)->ob_refcnt/Py_REFCNT(\1)/g' "$f"; \
+    done; \
+    grep -rn 'ob_refcnt' libs/python/src/ || echo "All ob_refcnt references patched."; \
+    printf 'using python : %s\n  : %s\n  : %s\n  : %s/lib\n  : <toolset>gcc ;\n' "${PYTHON_VERSION}" "${PYTHON_BIN}" "${PYTHON_INCLUDE_DIR}" "${CONDA_PREFIX_PATH}" > /tmp/user-config.jam; \
+    cat /tmp/user-config.jam; \
+    ./bootstrap.sh --prefix="${CONDA_PREFIX_PATH}" --with-libraries=python; \
+    ./b2 install \
+        --with-python \
+        --user-config=/tmp/user-config.jam \
+        toolset=gcc \
+        cxxflags="-std=c++17 -fPIC -I${PYTHON_INCLUDE_DIR}" \
+        cflags="-fPIC -I${PYTHON_INCLUDE_DIR}" \
+        link=shared \
+        threading=multi \
+        variant=release \
+        -j$(nproc) \
+        -d1; \
+    echo "=== Boost.Python installed (runtime) ==="; \
+    ls -la ${CONDA_PREFIX_PATH}/lib/libboost_python* 2>/dev/null || true; \
+    ls -la ${CONDA_PREFIX_PATH}/lib/libboost_numpy* 2>/dev/null || true; \
+    cd /tmp; \
+    rm -rf "${BOOST_SRC_DIR}" "${BOOST_TARBALL}" /tmp/user-config.jam
+
+# 确保 Caffe 编译产物中 libcaffe.so 符号链接存在
+RUN set -eux; \
+    ln -sf ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so.1.0.0 ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so; \
+    ldconfig
+
+# 从 pycaffe-builder-conda 复制 wheel 并安装
+COPY --from=pycaffe-builder-conda ${WORKSPACE_DIR}/pycaffe/dist ${WORKSPACE_DIR}/pycaffe/dist
+COPY python/pycaffe/verify.py ${WORKSPACE_DIR}/pycaffe/verify.py
+COPY python/pycaffe/test_inference.py ${WORKSPACE_DIR}/pycaffe/test_inference.py
+COPY python/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt
+
+# 安装 pycaffe wheel 并验证导入（推理测试在构建后手动运行）
+# 注意：必须在导入 pycaffe 之前设置 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python，
+# 否则 protobuf C 扩展与系统 libprotobuf.so.23 冲突导致重复注册错误。
+SHELL ["/bin/bash", "-c"]
+RUN source /opt/conda/etc/profile.d/conda.sh && \
+    conda activate ${CONDA_ENV} && \
+    set -eux; \
+    export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python; \
+    echo "=== Installing pycaffe wheel ==="; \
+    pip install --no-cache-dir ${WORKSPACE_DIR}/pycaffe/dist/*.whl; \
+    echo ""; \
+    echo "=== Verifying pycaffe import ==="; \
+    python -c "import pycaffe; print('pycaffe version:', pycaffe.__version__); print('Python version:', __import__('sys').version); print('TRAIN:', pycaffe.TRAIN, 'TEST:', pycaffe.TEST); print('set_mode_cpu:', pycaffe.set_mode_cpu)"; \
+    echo ""; \
+    echo "=== pycaffe installation completed ==="
+
+# 设置运行时环境
+# PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python:
+#   强制 protobuf 使用纯 Python 实现，避免新版 protobuf C 扩展（upb）
+#   与系统 libprotobuf.so.23（3.12.4）发生符号冲突导致重复注册错误。
+# LD_LIBRARY_PATH:
+#   必须包含 conda 环境的 lib 目录以找到 libboost_python314.so（源码编译），
+#   同时包含 Caffe 构建输出目录以找到 libcaffe.so。
+ENV WORKSPACE_DIR=/workspace \
+    CAFFE_ROOT=/workspace/caffex \
+    CONDA_ENV=pycaffe-py314 \
+    PATH=/opt/conda/envs/pycaffe-py314/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LD_LIBRARY_PATH=/opt/conda/envs/pycaffe-py314/lib:/workspace/caffex/build/lib:/usr/lib:/usr/lib/x86_64-linux-gnu:/usr/local/lib \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+    CONDA_DEFAULT_ENV=pycaffe-py314
+
+# 设置默认 shell 为 bash
+SHELL ["/bin/bash", "-c"]
+
+USER ${BUILDER_USER}
+WORKDIR ${WORKSPACE_DIR}
+
+# 默认入口：激活 conda 环境后启动 bash
+ENTRYPOINT ["/bin/bash", "-c"]
+CMD ["source /opt/conda/etc/profile.d/conda.sh && conda activate pycaffe-py314 && exec bash"]

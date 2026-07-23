@@ -38,7 +38,8 @@ docker/local/conda/
 | `base-builder` | 基础构建环境（系统构建依赖 + Python 3.10 依赖） | 通常由其他阶段复用 |
 | `builder-dev` | 开发构建环境（含源码挂载支持） | `./build.sh` |
 | `builder` | CI 构建阶段（编译 Caffe 源码） | `./build/build-multistage.sh --target builder` |
-| `runtime` | 完整运行时镜像（从 builder 获取编译产物） | `./build/build-multistage.sh --target runtime` |
+| `pycaffe-builder` | 构建 pycaffe wheel（从 builder 获取编译产物） | `./build/build-multistage.sh --target pycaffe-builder` |
+| `runtime` | 完整运行时镜像（含 Caffe + PyCaffe wheel） | `./build/build-multistage.sh --target runtime` |
 
 ## 快速开始
 
@@ -119,6 +120,34 @@ docker run --rm caffe-cpu:runtime verify-caffe.sh
 ```bash
 docker run --rm -it caffe-cpu:runtime bash
 python3 -c "import caffe; print('Caffe version:', caffe.__version__)"
+```
+
+### 验证 PyCaffe (scikit-build-core wheel)
+
+runtime 镜像已内置 PyCaffe wheel 安装。构建时会自动运行 `python /workspace/pycaffe/verify.py` 验证。也可手动验证：
+
+```bash
+docker run --rm caffe-cpu:runtime python3 /workspace/pycaffe/verify.py
+```
+
+或交互式验证 PyCaffe 推理：
+
+```bash
+docker run --rm -it caffe-cpu:runtime python3 -c "
+import pycaffe
+pycaffe.set_mode_cpu()
+print('PyCaffe version:', pycaffe.__version__)
+print('Net class:', pycaffe.Net)
+print('SGDSolver:', pycaffe.SGDSolver)
+"
+```
+
+### 构建仅 pycaffe-builder 阶段
+
+```bash
+docker build -t caffe-cpu:pycaffe-builder \
+  --target pycaffe-builder \
+  -f docker/local/conda/Dockerfile .
 ```
 
 ## 常见路径约定

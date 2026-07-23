@@ -231,6 +231,55 @@ RUN set -eux; \
     echo "========================================"
 
 # ==============================================================================
+# 阶段 3.5: pycaffe-builder — 构建 pycaffe wheel
+# 从 builder 获取已编译的 Caffe，使用 scikit-build-core 构建 pycaffe wheel
+# ==============================================================================
+FROM base-builder AS pycaffe-builder
+
+ARG CAFFE_VERSION=1.0
+
+LABEL stage=pycaffe-builder
+LABEL caffe.version=${CAFFE_VERSION}
+
+USER root
+
+# 从 builder 复制已编译的 Caffe 产物（库文件 + 头文件 + distribute）
+COPY --from=builder ${WORKSPACE_DIR}/caffex/build ${WORKSPACE_DIR}/caffex/build
+COPY --from=builder ${WORKSPACE_DIR}/caffex/include ${WORKSPACE_DIR}/caffex/include
+COPY --from=builder ${WORKSPACE_DIR}/caffex/distribute ${WORKSPACE_DIR}/caffex/distribute
+COPY --from=builder ${WORKSPACE_DIR}/caffex/Makefile.config ${WORKSPACE_DIR}/caffex/Makefile.config
+
+# 创建 libcaffe.so 符号链接（Caffe 编译产物为 libcaffe.so.1.0.0，CMake find_library 需要 .so）
+RUN set -eux; \
+    ln -sf ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so.1.0.0 ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so; \
+    ls -la ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so*; \
+    ldconfig
+
+# 复制 pycaffe 源码
+COPY python/pycaffe ${WORKSPACE_DIR}/pycaffe
+
+# 安装 Python build 工具，并设置 pycaffe 目录权限
+RUN pip install --no-cache-dir build && \
+    mkdir -p ${WORKSPACE_DIR}/pycaffe/dist && \
+    chown -R ${BUILDER_USER}:${BUILDER_USER} ${WORKSPACE_DIR}/pycaffe
+
+USER ${BUILDER_USER}
+WORKDIR ${WORKSPACE_DIR}/pycaffe
+
+# 构建 pycaffe wheel
+# CONDA_PREFIX 指向 Caffe 编译产物目录（含 lib/ 子目录）
+# CMAKE_ARGS 传递额外的 include 路径
+RUN set -eux; \
+    echo "=== Building pycaffe wheel ==="; \
+    python -m build --wheel --outdir dist/ \
+      -C "cmake.define.CONDA_PREFIX=${WORKSPACE_DIR}/caffex/build" \
+      -C "cmake.define.CAFFE_INCLUDE_DIR=${WORKSPACE_DIR}/caffex/include" \
+      -C "cmake.define.CAFFE_LIBRARY=${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so"; \
+    echo ""; \
+    echo "=== pycaffe wheel built ==="; \
+    ls -lh dist/*.whl
+
+# ==============================================================================
 # 阶段 4: runtime — 完整运行时镜像
 # 基于 base-builder（已包含所有系统库和 Python 依赖），仅复制编译产物
 # 注意：为简化依赖管理，runtime 复用 base-builder 的系统依赖层
@@ -252,6 +301,47 @@ COPY --from=builder ${WORKSPACE_DIR}/caffex/distribute ${WORKSPACE_DIR}/caffex/d
 COPY --from=builder ${WORKSPACE_DIR}/caffex/Makefile.config ${WORKSPACE_DIR}/caffex/Makefile.config
 COPY docker/local/conda/scripts/verify-caffe.sh /usr/local/bin/verify-caffe.sh
 RUN chmod +x /usr/local/bin/verify-caffe.sh
+
+# 创建 libcaffe.so 符号链接（运行时链接 _caffe.so 需要）
+RUN set -eux; \
+    ln -sf ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so.1.0.0 ${WORKSPACE_DIR}/caffex/build/lib/libcaffe.so; \
+    ldconfig
+
+# 从 pycaffe-builder 复制 pycaffe wheel 并安装
+COPY --from=pycaffe-builder ${WORKSPACE_DIR}/pycaffe/dist ${WORKSPACE_DIR}/pycaffe/dist
+COPY python/pycaffe/verify.py ${WORKSPACE_DIR}/pycaffe/verify.py
+COPY python/pycaffe/test_inference.py ${WORKSPACE_DIR}/pycaffe/test_inference.py
+COPY python/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt
+
+RUN set -eux; \
+    echo "=== Installing pycaffe wheel ==="; \
+    pip install --no-cache-dir ${WORKSPACE_DIR}/pycaffe/dist/*.whl; \
+    echo ""; \
+    echo "=== Debug: checking installed files ==="; \
+    pip show -f pycaffe 2>&1 || true; \
+    echo ""; \
+    echo "=== Debug: find _caffe.so ==="; \
+    find / -name "_caffe*.so" -ls 2>/dev/null || true; \
+    echo ""; \
+    echo "=== Debug: ldd _caffe.so ==="; \
+    SO_FILE=$(find / -name "_caffe*.so" 2>/dev/null | head -1); \
+    if [ -n "${SO_FILE}" ] && [ -f "${SO_FILE}" ]; then \
+      echo "Found: ${SO_FILE}"; \
+      ldd "${SO_FILE}" 2>&1 || true; \
+    else \
+      echo "WARNING: _caffe.so not found anywhere"; \
+    fi; \
+    echo ""; \
+    echo "=== Debug: wheel contents ==="; \
+    python -c "import zipfile; z=zipfile.ZipFile('${WORKSPACE_DIR}/pycaffe/dist/pycaffe-1.0.0-py3-none-linux_x86_64.whl'); [print(n) for n in z.namelist()]" 2>&1 || true; \
+    echo ""; \
+    echo "=== Verifying pycaffe installation ==="; \
+    python ${WORKSPACE_DIR}/pycaffe/verify.py || true; \
+    echo ""; \
+    echo "=== Running inference test ==="; \
+    python ${WORKSPACE_DIR}/pycaffe/test_inference.py || true; \
+    echo ""; \
+    echo "=== pycaffe verification completed ==="
 
 RUN set -eux; \
     echo "=== Verifying Caffe runtime ==="; \

@@ -39,7 +39,7 @@ LOG_DIR="${PROJECT_DIR}/docker/local/logs"
 JOBS=""
 
 # Dockerfile 各阶段列表（用于日志上下文）
-readonly ALL_STAGES=("base-system" "base-builder" "builder-dev" "builder" "runtime")
+readonly ALL_STAGES=("base-system" "base-builder" "builder-dev" "builder" "pycaffe-builder" "runtime")
 
 # ------------------------------------------------------------------------------
 # 帮助信息
@@ -57,7 +57,7 @@ show_help() {
 选项:
   -t TAG              指定镜像标签 (默认: ${DEFAULT_TAG})
   --target TARGET     指定构建目标阶段 (默认: ${DEFAULT_TARGET})
-                      可选: base-system, base-builder, builder-dev, builder, runtime
+                      可选: base-system, base-builder, builder-dev, builder, pycaffe-builder, runtime
   --no-cache          无缓存构建
   --jobs N            并行编译任务数 (默认: nproc 自动检测)
   --verify            构建后运行验证
