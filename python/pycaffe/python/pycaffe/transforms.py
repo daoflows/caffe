@@ -35,7 +35,7 @@ if not _HAS_CV2:
     from skimage.transform import resize as _sk_resize
     from scipy.ndimage import zoom as _ndimage_zoom
 
-from .dataclasses import (
+from .data_types import (
     BatchInputInfo,
     BatchTimingStats,
     ChannelStats,
