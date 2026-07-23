@@ -1,30 +1,17 @@
-# pycaffe CMakeLists.txt (tvm-ffi slim version)
-#
-# Legacy boost::python version preserved as CMakeLists.txt.legacy for caffex builds.
-# This version builds the tvm-ffi slimmed _caffe.so without boost/glog/gflags dependencies.
-#
-# Build with scikit-build-core:
-#   pip install scikit-build-core ninja build
-#   python -m build --wheel
-#
-# Or standalone CMake build:
-#   mkdir build && cd build
-#   cmake .. -DCMAKE_BUILD_TYPE=Release
-#   cmake --build . -j
-
-cmake_minimum_required(VERSION 3.18)
-project(pycaffe VERSION 1.0.0-slim LANGUAGES CXX C)
+cmake_minimum_required(VERSION 3.26)
+project(caffe_python LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(CAFFE_CPU_ONLY "Build Caffe with CPU only support" ON)
 if(NOT CAFFE_VERSION)
   set(CAFFE_VERSION "1.0.0-slim")
 endif()
 
-set(TVM_FFI_USE_LIBBACKTRACE OFF CACHE BOOL "Disable libbacktrace" FORCE)
+set(TVM_FFI_USE_LIBBACKTRACE OFF CACHE BOOL "Disable libbacktrace for Caffe slim build" FORCE)
 set(TVM_FFI_BACKTRACE_ON_SEGFAULT OFF CACHE BOOL "Disable segfault backtrace" FORCE)
 
 if(POLICY CMP0144)
@@ -34,8 +21,7 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()
 
-# tvm-ffi path (relative to pycaffe/ directory)
-set(TVM_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../ffi/tvm-ffi")
+set(TVM_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../ffi/tvm-ffi")
 if(NOT EXISTS "${TVM_FFI_DIR}/CMakeLists.txt")
   message(FATAL_ERROR "tvm-ffi not found at ${TVM_FFI_DIR}")
 endif()
@@ -45,22 +31,16 @@ find_package(Protobuf REQUIRED)
 find_package(Threads REQUIRED)
 find_package(BLAS QUIET)
 if(NOT BLAS_FOUND)
-  find_library(BLAS_LIBRARIES NAMES openblas cblas blas
-    PATHS /usr/lib /usr/local/lib ${CONDA_PREFIX}/lib ${CONDA_ENV_PREFIX}/lib)
-  find_path(BLAS_INCLUDE_DIRS cblas.h openblas.h
-    PATHS /usr/include /usr/include/x86_64-linux-gnu /usr/local/include
-          ${CONDA_PREFIX}/include ${CONDA_ENV_PREFIX}/include)
+  find_library(BLAS_LIBRARIES NAMES openblas cblas blas PATHS /usr/lib /usr/local/lib ${CONDA_PREFIX}/lib ${CONDA_ENV_PREFIX}/lib)
+  find_path(BLAS_INCLUDE_DIRS cblas.h openblas.h PATHS /usr/include /usr/include/x86_64-linux-gnu /usr/local/include ${CONDA_PREFIX}/include ${CONDA_ENV_PREFIX}/include)
 endif()
 
-# Caffe source paths (relative to pycaffe/ -> python/ is parent)
-set(CAFFE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
-set(CAFFE_INCLUDE_DIR "${CAFFE_ROOT}/include")
-set(CAFFE_SRC_DIR "${CAFFE_ROOT}/src")
-set(CAFFE_PROTO_DIR "${CAFFE_SRC_DIR}/caffe/proto")
+set(CAFFE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(CAFFE_SRC_PARENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(CAFFE_PROTO_DIR "${CAFFE_SRC_PARENT_DIR}/caffe/proto")
 set(CAFFE_GEN_PROTO_DIR "${CMAKE_BINARY_DIR}/caffe_proto_gen")
 file(MAKE_DIRECTORY "${CAFFE_GEN_PROTO_DIR}")
 
-# Protobuf generation
 set(CAFFE_PROTO_FILE "${CAFFE_PROTO_DIR}/caffe.proto")
 set(CAFFE_PROTO_HDR "${CAFFE_GEN_PROTO_DIR}/caffe/proto/caffe.pb.h")
 set(CAFFE_PROTO_SRC "${CAFFE_GEN_PROTO_DIR}/caffe/proto/caffe.pb.cc")
@@ -69,21 +49,27 @@ if(EXISTS "${CAFFE_PROTO_FILE}")
   add_custom_command(
     OUTPUT "${CAFFE_PROTO_SRC}" "${CAFFE_PROTO_HDR}"
     COMMAND ${PROTOBUF_PROTOC}
-      --proto_path=${CAFFE_SRC_DIR}
+      --proto_path=${CAFFE_SRC_PARENT_DIR}
       --cpp_out=${CAFFE_GEN_PROTO_DIR}
       caffe/proto/caffe.proto
     DEPENDS "${CAFFE_PROTO_FILE}"
     COMMENT "Generating caffe.pb.cc/caffe.pb.h from caffe.proto"
   )
   set(CAFFE_PROTO_SRCS "${CAFFE_PROTO_SRC}")
+  set(CAFFE_PROTO_HDRS "${CAFFE_PROTO_HDR}")
 else()
   message(FATAL_ERROR "caffe.proto not found at ${CAFFE_PROTO_FILE}")
 endif()
 
-# Collect caffe_core sources (excluding _caffe.cpp)
-file(GLOB CAFFE_CORE_SRCS "${CAFFE_SRC_DIR}/caffe/*.cpp")
-file(GLOB CAFFE_UTIL_SRCS "${CAFFE_SRC_DIR}/caffe/util/*.cpp")
-file(GLOB CAFFE_LAYER_SRCS "${CAFFE_SRC_DIR}/caffe/layers/*.cpp")
+file(GLOB CAFFE_CORE_SRCS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/caffe/*.cpp"
+)
+file(GLOB CAFFE_UTIL_SRCS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/caffe/util/*.cpp"
+)
+file(GLOB CAFFE_LAYER_SRCS
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/caffe/layers/*.cpp"
+)
 list(APPEND CAFFE_CORE_SRCS ${CAFFE_UTIL_SRCS} ${CAFFE_LAYER_SRCS})
 list(FILTER CAFFE_CORE_SRCS EXCLUDE REGEX "_caffe\\.cpp$")
 
@@ -130,26 +116,20 @@ if(MSVC)
   target_link_libraries(caffe_core PUBLIC DbgHelp.lib)
 endif()
 
-# Build _caffe shared library from local _caffe.cpp (pycaffe copy)
-set(_caffe_ffi_src "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe/_caffe.cpp")
-if(NOT EXISTS "${_caffe_ffi_src}")
-  # Fallback to src/caffe/_caffe.cpp if local copy not found
-  set(_caffe_ffi_src "${CAFFE_SRC_DIR}/caffe/_caffe.cpp")
-endif()
-
+set(_caffe_ffi_src "${CMAKE_CURRENT_SOURCE_DIR}/src/caffe/_caffe.cpp")
 add_library(_caffe SHARED "${_caffe_ffi_src}")
 set_target_properties(_caffe PROPERTIES
   PREFIX ""
   OUTPUT_NAME "_caffe"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/caffe"
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/python/caffe"
 )
 if(MSVC)
   foreach(config_type Release RELEASE Debug DEBUG RelWithDebInfo)
     set_target_properties(_caffe PROPERTIES
-      RUNTIME_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-      LIBRARY_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-      ARCHIVE_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
+      RUNTIME_OUTPUT_DIRECTORY_${config_type} "${CMAKE_BINARY_DIR}/python/caffe"
+      LIBRARY_OUTPUT_DIRECTORY_${config_type} "${CMAKE_BINARY_DIR}/python/caffe"
+      ARCHIVE_OUTPUT_DIRECTORY_${config_type} "${CMAKE_BINARY_DIR}/python/caffe"
     )
   endforeach()
 endif()
@@ -158,7 +138,6 @@ target_include_directories(_caffe PRIVATE
   "${CAFFE_INCLUDE_DIR}"
   "${CAFFE_GEN_PROTO_DIR}"
 )
-
 if(MSVC)
   target_link_libraries(_caffe PRIVATE
     -WHOLEARCHIVE:$<TARGET_FILE:caffe_core>
@@ -177,32 +156,36 @@ if(MSVC)
   )
 endif()
 
-# Also copy tvm_ffi shared library next to _caffe so it can be found at runtime
-if(TARGET tvm_ffi::shared)
-  add_custom_command(TARGET _caffe POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      $<TARGET_FILE:tvm_ffi::shared>
-      "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe/"
-    COMMENT "Copying tvm_ffi shared library to pycaffe package directory"
+enable_testing()
+
+set(CAFFE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_caffe_slim.cpp")
+if(EXISTS "${CAFFE_TEST_SRC}")
+  add_executable(test_caffe_slim "${CAFFE_TEST_SRC}")
+  target_include_directories(test_caffe_slim PRIVATE
+    "${CAFFE_INCLUDE_DIR}"
+    "${CAFFE_GEN_PROTO_DIR}"
+  )
+  if(MSVC)
+    target_link_libraries(test_caffe_slim PRIVATE
+      -WHOLEARCHIVE:$<TARGET_FILE:caffe_core>
+      tvm_ffi::shared
+    )
+  else()
+    target_link_libraries(test_caffe_slim PRIVATE
+      -Wl,--whole-archive caffe_core -Wl,--no-whole-archive
+      tvm_ffi::shared
+    )
+  endif()
+  set_target_properties(test_caffe_slim PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+  )
+  add_test(NAME caffe_slim_unit_tests
+    COMMAND test_caffe_slim "${CMAKE_CURRENT_SOURCE_DIR}/tests"
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
   )
 endif()
 
-enable_testing()
-
 install(TARGETS _caffe
-  LIBRARY DESTINATION pycaffe
-  RUNTIME DESTINATION pycaffe
-)
-install(DIRECTORY python/pycaffe/
-  DESTINATION pycaffe
-  FILES_MATCHING
-  PATTERN "*.py"
-  PATTERN "*.cpp" EXCLUDE
-  PATTERN "test" EXCLUDE
-  PATTERN "proto" EXCLUDE
-)
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../caffeproto/
-  DESTINATION caffeproto
-  FILES_MATCHING
-  PATTERN "*.py"
+  LIBRARY DESTINATION python/caffe
+  RUNTIME DESTINATION python/caffe
 )

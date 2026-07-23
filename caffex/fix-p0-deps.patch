@@ -1,0 +1,67 @@
+diff --git a/python/requirements.txt b/python/requirements.txt
+--- a/python/requirements.txt
++++ b/python/requirements.txt
+@@ -1,5 +1,5 @@
+ Cython>=0.19.2
+-numpy>=1.7.1
++numpy>=1.7.1,<2
+ scipy>=0.13.2
+ scikit-image>=0.9.3
+ matplotlib>=1.3.1
+@@ -9,7 +9,7 @@
+ networkx>=1.8.1
+ nose>=1.3.0
+ pandas>=0.12.0
+-python-dateutil>=1.4,<2
++python-dateutil>=2.0
+ protobuf>=2.5.0
+ python-gflags>=2.0
+ pyyaml>=3.10
+diff --git a/cmake/Dependencies.cmake b/cmake/Dependencies.cmake
+--- a/cmake/Dependencies.cmake
++++ b/cmake/Dependencies.cmake
+@@ -5,7 +5,23 @@
+ set(Caffe_COMPILE_OPTIONS "")
+ 
+ # ---[ Boost
+-find_package(Boost 1.54 REQUIRED COMPONENTS system thread filesystem python)
++# Boost 1.67+ renamed the Python component from "python" to "python3" (and
++# versioned suffixes like python310 on some distros). Try modern name first,
++# fall back to legacy.
++find_package(Boost 1.54 QUIET COMPONENTS system thread filesystem python3)
++if(NOT Boost_FOUND)
++  find_package(Boost 1.54 REQUIRED COMPONENTS system thread filesystem python)
++endif()
++# If neither python3 nor python component is available, gracefully disable
++# the Python layer instead of failing with cryptic linker errors.
++if(NOT Boost_PYTHON3_FOUND AND NOT Boost_PYTHON_FOUND)
++  message(WARNING "Boost Python component not found. Python layer will not be built. "
++                  "Install libboost-python-dev (Debian/Ubuntu) or boost-python3.")
++  if(BUILD_python_layer)
++    message(WARNING "BUILD_python_layer is ON but Boost.Python is missing; forcing OFF.")
++    set(BUILD_python_layer OFF CACHE BOOL "Build the Caffe Python layer" FORCE)
++  endif()
++endif()
+ list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${Boost_INCLUDE_DIRS})
+ list(APPEND Caffe_LINKER_LIBS PUBLIC ${Boost_LIBRARIES})
+ 
+diff --git a/cmake/ProtoBuf.cmake b/cmake/ProtoBuf.cmake
+--- a/cmake/ProtoBuf.cmake
++++ b/cmake/ProtoBuf.cmake
+@@ -16,8 +16,14 @@
+ if(PROTOBUF_FOUND)
+   # fetches protobuf version
+   caffe_parse_header(${PROTOBUF_INCLUDE_DIR}/google/protobuf/stubs/common.h VERION_LINE GOOGLE_PROTOBUF_VERSION)
+-  string(REGEX MATCH "([0-9])00([0-9])00([0-9])" PROTOBUF_VERSION ${GOOGLE_PROTOBUF_VERSION})
+-  set(PROTOBUF_VERSION "${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
++  # Legacy regex "([0-9])00([0-9])00([0-9])" only works for protobuf < 3.10
++  # (single-digit minor/patch). Since 3.10+ uses multi-digit versions (e.g.
++  # 3010000=3.10.0, 4025000=4.25.0, 29006000=29.6.0), use integer arithmetic
++  # to correctly parse MAJOR*10^6 + MINOR*10^3 + PATCH.
++  math(EXPR PROTOBUF_VERSION_MAJOR "${GOOGLE_PROTOBUF_VERSION} / 1000000")
++  math(EXPR PROTOBUF_VERSION_MINOR "(${GOOGLE_PROTOBUF_VERSION} / 1000) % 1000")
++  math(EXPR PROTOBUF_VERSION_PATCH "${GOOGLE_PROTOBUF_VERSION} % 1000")
++  set(PROTOBUF_VERSION "${PROTOBUF_VERSION_MAJOR}.${PROTOBUF_VERSION_MINOR}.${PROTOBUF_VERSION_PATCH}")
+   unset(GOOGLE_PROTOBUF_VERSION)
+ endif()
+ 

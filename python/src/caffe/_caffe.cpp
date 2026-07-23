@@ -1,7 +1,3 @@
-// Caffe Slim FFI module (tvm-ffi based)
-// This file replaces the old boost::python implementation with tvm-ffi C ABI exports.
-// The shared library built from this file can be loaded via tvm_ffi.load_module() from Python.
-
 #include <tvm/ffi/tvm_ffi.h>
 #include <tvm/ffi/container/tensor.h>
 #include <tvm/ffi/extra/stl.h>
