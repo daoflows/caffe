@@ -40,8 +40,8 @@ def _load_module_from_path(module_name, file_path, package=None):
 def _load_dataclasses_module():
     test_dir = os.path.dirname(os.path.abspath(__file__))
     python_dir = os.path.dirname(test_dir)
-    dc_path = os.path.join(python_dir, 'pycaffe', 'python', 'pycaffe', 'dataclasses.py')
-    return _load_module_from_path('pycaffe_dataclasses', dc_path)
+    dc_path = os.path.join(python_dir, 'pycaffe', 'python', 'pycaffe', 'data_types.py')
+    return _load_module_from_path('pycaffe_data_types', dc_path)
 
 
 def _load_netspec_module():
