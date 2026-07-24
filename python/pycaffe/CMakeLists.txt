@@ -35,7 +35,7 @@ if(POLICY CMP0167)
 endif()
 
 # tvm-ffi path (relative to pycaffe/ directory)
-set(TVM_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../ffi/tvm-ffi")
+set(TVM_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../tvm-ffi")
 if(NOT EXISTS "${TVM_FFI_DIR}/CMakeLists.txt")
   message(FATAL_ERROR "tvm-ffi not found at ${TVM_FFI_DIR}")
 endif()

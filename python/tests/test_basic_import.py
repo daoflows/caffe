@@ -4,8 +4,8 @@ import sys
 import os
 import ctypes
 
-CAFFE_PY = "/mnt/d/spaces/SpecWeave/external/chaos/caffe/python"
-TVM_FFI_PY = "/mnt/d/spaces/SpecWeave/external/ffi/tvm-ffi/python"
+CAFFE_PY = "/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python"
+TVM_FFI_PY = "/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/tvm-ffi/python"
 BUILD_DIR = os.path.join(CAFFE_PY, "build")
 
 sys.path.insert(0, TVM_FFI_PY)

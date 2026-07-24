@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /mnt/d/spaces/SpecWeave/external/chaos/caffe/python
+cd /mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python
 
 echo "=== FINAL COMPREHENSIVE AUDIT ==="
 echo ""
@@ -67,10 +67,10 @@ ctest --output-on-failure 2>&1
 
 echo ""
 echo "=== 6. Final Python inference smoke test ==="
-cd /mnt/d/spaces/SpecWeave/external/chaos/caffe/python
+cd /mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python
 cp build/python/caffe/_caffe.so python/caffe/ 2>/dev/null || true
-export PYTHONPATH="/mnt/d/spaces/SpecWeave/external/chaos/caffe/python/python:/mnt/d/spaces/SpecWeave/external/ffi/tvm-ffi/python:$PYTHONPATH"
-export LD_LIBRARY_PATH="/mnt/d/spaces/SpecWeave/external/chaos/caffe/python/build/lib:$LD_LIBRARY_PATH"
+export PYTHONPATH="/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python/python:/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/tvm-ffi/python:$PYTHONPATH"
+export LD_LIBRARY_PATH="/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python/build/lib:$LD_LIBRARY_PATH"
 python3 << 'PYEOF'
 import numpy as np
 import caffe
@@ -79,7 +79,7 @@ print("=== Final Python Verification ===")
 print(f"Caffe version: {caffe.version()}")
 print(f"Registered layers: {len(caffe.layer_type_list())}")
 
-proto = '/mnt/d/spaces/SpecWeave/external/chaos/caffe/python/tests/lenet_deploy.prototxt'
+proto = '/mnt/d/spaces/SpecWeave/projects/xuanspace/vendor/caffe/python/tests/lenet_deploy.prototxt'
 net = caffe.Net(proto, caffe.TEST)
 
 rng = np.random.RandomState(42)
