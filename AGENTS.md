@@ -32,6 +32,14 @@ caffe/                          # 本目录：最小化protobuf包装
 │   ├── context-routing.md      # 任务类型→源码入口映射
 │   ├── architecture-map.md     # 核心架构索引（8大组件文件定位）
 │   └── README.md               # .agents/目录说明
+├── docs/                       # 项目文档
+│   └── adding-operators.md     # 添加新算子四步法指南
+├── tools/                      # 工具与构建配置
+│   └── build-config/           # 构建系统配置（CMake + Conan）
+│       ├── CMakeLists.txt      # 外层构建配置
+│       ├── conanfile.py        # Conan依赖管理
+│       ├── .conanrc            # Conan本地配置
+│       └── README.md           # 构建说明
 ├── caffex/                     # BVLC Caffe 原始源码
 │   ├── include/caffe/          # C++头文件（核心抽象定义）
 │   ├── src/caffe/              # C++实现（含layers/、proto/、CUDA）
@@ -41,8 +49,6 @@ caffe/                          # 本目录：最小化protobuf包装
 │   ├── examples/               # 示例（MNIST、CIFAR10、ImageNet等）
 │   ├── docs/                   # 官方文档与教程
 │   └── cmake/                  # CMake构建脚本
-├── CMakeLists.txt              # 外层构建配置
-├── conanfile.py                # Conan依赖管理
 └── README.md                   # 构建说明
 ```
 
@@ -53,7 +59,8 @@ caffe/                          # 本目录：最小化protobuf包装
 | 架构总览 | `.agents/architecture-map.md` |
 | 核心抽象分析 | `.agents/context-routing.md` → 核心头文件索引 |
 | 源码阅读导航 | `.agents/context-routing.md` → 文件路径映射 |
-| 构建编译 | `README.md` + `CMakeLists.txt` + `caffex/INSTALL.md` |
+| 构建编译 | `README.md` + `tools/build-config/README.md` + `tools/build-config/CMakeLists.txt` + `caffex/INSTALL.md` |
+| 添加新算子 | `docs/adding-operators.md` |
 | 深度学习概念 | 先读 `.agents/architecture-map.md` 了解 Blob/Layer/Net/Solver 四层抽象 |
 | 向上回溯父工作区 | 读取 `../../AGENTS.md`（SpecWeave 主入口） |
 
@@ -94,6 +101,6 @@ caffe/                          # 本目录：最小化protobuf包装
 ## 注意事项
 
 - **不修改caffex/源码**：caffex/ 是 BVLC 原始 fork，不要直接修改其内容
-- **构建使用外层CMake**：本目录的 CMakeLists.txt 是最小化 protobuf 构建，caffex/ 自带完整 CMake
+- **构建使用外层CMake**：`tools/build-config/CMakeLists.txt` 是最小化 protobuf 构建，caffex/ 自带完整 CMake
 - **CUDA相关代码可选**：`.cu` 文件是 CUDA 实现，无 GPU 环境可只读 `.cpp` 和 `.hpp`
 - **Layer数量众多**：caffex/src/caffe/layers/ 下有75+个Layer实现，优先读核心5-10个（conv、pooling、relu、inner_product、softmax、data等）

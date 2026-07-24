@@ -1,0 +1,51 @@
+// ============================================================================
+// 步骤1产出：HardSigmoidParameter Protocol Buffer 定义
+// 将此片段合并到 python/protos/caffe.proto 的对应位置
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 位置A：在 PReLUParameter 消息定义之后，添加 HardSigmoidParameter
+// （参考文件中已有的 NormalizeParameter 位置，搜索 PReLUParameter 定位）
+// ----------------------------------------------------------------------------
+
+// HardSigmoid 激活函数参数
+// 公式：y = max(0, min(1, alpha * x + beta))
+// 参考：ONNX HardSigmoid 定义（https://onnx.ai/onnx/operators/onnx__HardSigmoid.html）
+// 默认值：alpha=0.2, beta=0.5（与 ONNX、PyTorch 一致）
+message HardSigmoidParameter {
+  // 线性项系数 alpha
+  optional float alpha = 1 [default = 0.2];
+  // 偏置项 beta
+  optional float beta = 2 [default = 0.5];
+}
+
+// ----------------------------------------------------------------------------
+// 位置B：在 LayerParameter 消息中，找到最后一个 xxx_param 字段，添加一行：
+// 注意：字段ID必须递增！先查看当前最大ID，下一个可用ID+1
+// ----------------------------------------------------------------------------
+
+// 在 LayerParameter 内添加（假设当前最大ID是 N，使用 N+1）：
+//   optional HardSigmoidParameter hardsigmoid_param = <next_id>;
+
+// 示例（具体ID需要根据你当前的caffe.proto确定）：
+//   optional HardSigmoidParameter hardsigmoid_param = 147;
+//                              ↑                          ↑
+//                         字段名必须是xxx_param       下一个可用ID
+
+// ----------------------------------------------------------------------------
+// 位置C：更新 LayerParameter 顶部的 "next available layer-specific ID" 注释
+// ----------------------------------------------------------------------------
+
+// 原来（示例）：
+//   // LayerParameter next available layer-specific ID: 147
+// 更新为：
+//   // LayerParameter next available layer-specific ID: 148
+//                                           （+1）
+
+// ============================================================================
+// 字段编号规则（必守）：
+// 1. 每个 message 内部字段编号从1开始递增
+// 2. LayerParameter 中所有 xxx_param 共享编号空间，不能重复
+// 3. 已发布/已使用的字段编号永远不能复用（即使字段删除也不行）
+// 4. 1-15 编号编码为1字节，频繁使用的字段尽量用小编号
+// ============================================================================

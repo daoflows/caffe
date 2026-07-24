@@ -6,11 +6,11 @@ find_package(Protobuf REQUIRED)
 
 # 定义 .proto 文件
 set(PROTO_FILES
-  ${CMAKE_CURRENT_SOURCE_DIR}/python/protos/caffe.proto
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../python/protos/caffe.proto
 )
 
 # 配置 Python 代码输出目录
-set(PYTHON_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/python)
+set(PYTHON_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../python)
 file(MAKE_DIRECTORY ${PYTHON_OUTPUT_DIR})
 
 # 使用 CMake 内置函数生成 Python 代码
