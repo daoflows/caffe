@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Caffe Conda 多阶段构建脚本 (Python 3.13)
+# Caffe Conda 多阶段构建脚本 (Python 3.14)
 #
-# 构建 conda + Python 3.13 版本的 Caffe Docker 镜像。
-# 先构建 builder 阶段（Caffe 编译），再构建 runtime-conda（pycaffe + Python 3.13）。
+# 构建 conda + Python 3.14 版本的 Caffe Docker 镜像。
+# 先构建 builder 阶段（Caffe 编译），再构建 runtime-conda（pycaffe + Python 3.14）。
 #
 # 使用示例:
 #   ./build-conda.sh                    # 构建 runtime-conda 目标
@@ -20,7 +20,7 @@ DOCKERFILE="${SCRIPT_DIR}/../Dockerfile.conda"
 ORIG_DOCKERFILE="${SCRIPT_DIR}/../Dockerfile"
 
 BUILDER_IMAGE="caffe-cpu:builder"
-RUNTIME_IMAGE="caffe-cpu:conda-py313"
+RUNTIME_IMAGE="caffe-cpu:conda-py314"
 TARGET="runtime-conda"
 
 # ---------------------------------------------------------------------------
@@ -95,14 +95,14 @@ build_conda() {
 # ---------------------------------------------------------------------------
 verify_inference() {
     local tool="$1"
-    echo "=== Verifying pycaffe inference (Python 3.13) ==="
+    echo "=== Verifying pycaffe inference (Python 3.14) ==="
 
     if [ "${tool}" = "docker" ]; then
         docker run --rm "${RUNTIME_IMAGE}" \
-            bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate pycaffe-py313 && python /workspace/pycaffe/test_inference.py"
+            bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate pycaffe-py314 && python /workspace/pycaffe/test_inference.py"
     else
         wslc run --rm "${RUNTIME_IMAGE}" \
-            bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate pycaffe-py313 && python /workspace/pycaffe/test_inference.py"
+            bash -c "source /opt/conda/etc/profile.d/conda.sh && conda activate pycaffe-py314 && python /workspace/pycaffe/test_inference.py"
     fi
 }
 

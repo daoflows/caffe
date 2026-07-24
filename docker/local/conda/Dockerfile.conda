@@ -32,8 +32,8 @@
 FROM caffe-cpu:builder AS pycaffe-builder-conda
 
 ARG BUILDER_USER=builder
-ARG BUILDER_UID=1001
-ARG BUILDER_GID=1001
+ARG BUILDER_UID=1000
+ARG BUILDER_GID=1000
 ARG WORKSPACE_DIR=/workspace
 ARG CONDA_ENV=pycaffe-py314
 ARG BOOST_VERSION=1.87.0
@@ -261,8 +261,8 @@ RUN source /opt/conda/etc/profile.d/conda.sh && \
 FROM caffe-cpu:builder AS runtime-conda
 
 ARG BUILDER_USER=builder
-ARG BUILDER_UID=1001
-ARG BUILDER_GID=1001
+ARG BUILDER_UID=1000
+ARG BUILDER_GID=1000
 ARG WORKSPACE_DIR=/workspace
 ARG CONDA_ENV=pycaffe-py314
 ARG BOOST_VERSION=1.87.0

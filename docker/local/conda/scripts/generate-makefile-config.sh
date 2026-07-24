@@ -57,7 +57,7 @@ fi
 PY_LIB_NAME="python${PYTHON_VERSION}"
 
 cat > Makefile.config << EOF
-# Makefile.config for BVLC Caffe - Auto-generated for Docker (Ubuntu 26.04)
+# Makefile.config for BVLC Caffe - Auto-generated for Docker (Ubuntu 22.04)
 
 CPU_ONLY := 1
 
