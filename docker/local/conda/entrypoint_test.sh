@@ -9,4 +9,4 @@ python /test_data_processor.py
 echo ""
 echo "=== LeNet training test ==="
 cd /workspace
-python python/pycaffe/test_pycaffe.py
+python caffe-slim/pycaffe/test_pycaffe.py

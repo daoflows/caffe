@@ -84,7 +84,7 @@
 - **Priority**: high
 - **Depends On**: Task 2
 - **Description**: 
-  - 基于 caffex 的 `include/caffe/common.hpp` 重写到 `python/include/caffe/common.hpp`：
+  - 基于 caffex 的 `include/caffe/common.hpp` 重写到 `caffe-slim/include/caffe/common.hpp`：
     - 替换 `#include <boost/shared_ptr.hpp>` 为 `#include "caffe/compat/smart_ptr.hpp"`
     - 替换 `#include <glog/logging.h>` 为 `#include "caffe/compat/logging.hpp"` 和 `#include "caffe/compat/check_macros.hpp"`
     - 移除 gflags 依赖（删除 `#include <gflags/gflags.h>`、`namespace gflags=google` 别名）
@@ -107,7 +107,7 @@
 - **Priority**: high
 - **Depends On**: Task 3
 - **Description**: 
-  - 从 caffex 复制并修改以下头文件到 `python/include/caffe/`：
+  - 从 caffex 复制并修改以下头文件到 `caffe-slim/include/caffe/`：
     - `syncedmem.hpp`：替换 boost/glog 引用为 compat 头文件，保留 SyncedMemory 类（UNINITIALIZED/HEAD_AT_CPU/HEAD_AT_GPU/SYNCED 四状态懒同步）
     - `blob.hpp`：Blob<Dtype> 类（data_/diff_ dual storage、Reshape、Forward/Backward）
     - `layer.hpp`：Layer<Dtype> NVI 生命周期（SetUp/Forward/Backward），移除 boost::thread 前向声明
@@ -118,7 +118,7 @@
     - `filler.hpp`
     - `data_transformer.hpp`（简化版，CPU_ONLY）
     - `caffe.hpp`（主 include 头文件）
-  - 从 caffex 复制并修改 util 头文件到 `python/include/caffe/util/`：
+  - 从 caffex 复制并修改 util 头文件到 `caffe-slim/include/caffe/util/`：
     - `device_alternate.hpp`：CPU_ONLY 模式下 CUDA 宏定义为 NO_GPU
     - `math_functions.hpp`：移除 boost/math 依赖，使用 std:: 和 cblas
     - `blocking_queue.hpp`：替换 boost::mutex/condition_variable
@@ -141,7 +141,7 @@
 - **Priority**: high
 - **Depends On**: Task 4
 - **Description**: 
-  - 从 caffex 复制并修改以下源文件到 `python/src/caffe/`：
+  - 从 caffex 复制并修改以下源文件到 `caffe-slim/src/caffe/`：
     - `syncedmem.cpp`
     - `blob.cpp`
     - `layer.cpp`
@@ -150,7 +150,7 @@
     - `data_transformer.cpp`（CPU_ONLY 简化版）
     - `layer_factory.cpp`：移除 boost::python 相关代码（BP_REGISTER_LAYER 宏、python_layer.hpp 引用），保留 C++ 层注册
     - `internal_thread.cpp` 和 `internal_thread.hpp`：替换 boost::thread/boost::thread_interrupted 为 std::thread + std::atomic<bool> stop_ flag
-  - 从 caffex 复制并修改 util 源文件到 `python/src/caffe/util/`：
+  - 从 caffex 复制并修改 util 源文件到 `caffe-slim/src/caffe/util/`：
     - `math_functions.cpp`：移除 boost::math/nextafter 和 boost::random，使用 std::nextafter 和 compat/random.hpp；移除 GPU 代码
     - `blocking_queue.cpp`：替换 boost::mutex/condition_variable/scoped_lock
     - `benchmark.cpp`：替换 boost::posix_time 为 compat/chrono.hpp
@@ -172,9 +172,9 @@
 - **Priority**: high
 - **Depends On**: Task 5
 - **Description**: 
-  - 首先迁移 Layer 基类相关头文件到 `python/include/caffe/layers/`：
+  - 首先迁移 Layer 基类相关头文件到 `caffe-slim/include/caffe/layers/`：
     - `neuron_layer.hpp`、`loss_layer.hpp`、`base_data_layer.hpp`、`base_conv_layer.hpp`、`data_layer.hpp`、`memory_data_layer.hpp`、`input_layer.hpp`
-  - 迁移核心推理层的 .hpp 和 .cpp（仅 CPU 版本，不迁移 .cu 文件）到 `python/src/caffe/layers/` 及对应 include 目录：
+  - 迁移核心推理层的 .hpp 和 .cpp（仅 CPU 版本，不迁移 .cu 文件）到 `caffe-slim/src/caffe/layers/` 及对应 include 目录：
     - neuron_layer.cpp + relu_layer、sigmoid_layer、tanh_layer、elu_layer、prelu_layer、absval_layer、bnll_layer、power_layer、exp_layer、log_layer、threshold_layer、swish_layer（部分简单层可只保留常用的）
     - conv_layer.cpp + inner_product_layer.cpp + base_conv_layer.cpp + im2col.cpp（CPU实现）
     - pooling_layer.cpp
@@ -209,7 +209,7 @@
 - **Priority**: high
 - **Depends On**: Task 6
 - **Description**: 
-  - 重写 `python/pycaffe/python/pycaffe/_caffe.cpp`（原 boost::python 绑定），完全移除 boost::python 相关代码（`#include <boost/python.hpp>`、`BOOST_PYTHON_MODULE`、`bp::` 命名空间、`vector_indexing_suite`、`NdarrayConverter` 等）
+  - 重写 `caffe-slim/pycaffe/python/pycaffe/_caffe.cpp`（原 boost::python 绑定），完全移除 boost::python 相关代码（`#include <boost/python.hpp>`、`BOOST_PYTHON_MODULE`、`bp::` 命名空间、`vector_indexing_suite`、`NdarrayConverter` 等）
   - 改为使用 tvm-ffi 导出机制（`TVM_FFI_DLL_EXPORT_TYPED_FUNC`），采用 opaque handle 模式：
     - 定义 `using NetHandle = uintptr_t;`、`using BlobHandle = uintptr_t;`（包装指针）
     - 导出函数：
@@ -269,7 +269,7 @@
 - **Priority**: high
 - **Depends On**: Task 9
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/__init__.py` 和 `pycaffe.py`：
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/__init__.py` 和 `pycaffe.py`：
     - 将 `from ._caffe import Net, SGDSolver, ...` 改为通过 tvm_ffi 加载 _caffe 模块
     - 编写 Python 包装类：`Net`、`Blob`、`Timer` 等，持有 handle 并在 __del__ 中调用 Delete 函数
     - Net 类封装：`__init__(model_file, phase, weights=None)` → 调用 NetInit；`forward()` → 调用 NetForward + 获取输出 Blob 转为 numpy；`blobs` 属性返回 OrderedDict of Blob 包装；`layers` 属性等
@@ -291,13 +291,13 @@
 - **Priority**: high
 - **Depends On**: Task 10
 - **Description**: 
-  - C++ 测试：创建 `python/tests/cpp/` 目录
+  - C++ 测试：创建 `caffe-slim/tests/cpp/` 目录
     - `test_blob.cpp`：验证 Blob 创建、Reshape、cpu_data() 读写
     - `test_net.cpp`：使用代码方式创建简单网络（Input→InnerProduct→Softmax），执行 Forward，验证输出
     - `test_check.cpp`：验证 ICHECK 宏失败时抛出 tvm::ffi::Error
     - `test_logging.cpp`：验证日志宏可正常使用不崩溃
     - `test_thread.cpp`：验证 BlockingQueue 和 InternalThread 替换
-  - Python 测试：运行现有 `python/tests/test_inference.py`，验证端到端推理可用
+  - Python 测试：运行现有 `caffe-slim/tests/test_inference.py`，验证端到端推理可用
   - 配置 CTest 集成运行 C++ 测试
 - **Acceptance Criteria Addressed**: AC-4, AC-6, AC-8, AC-9
 - **Test Requirements**:
@@ -310,7 +310,7 @@
 - **Priority**: high
 - **Depends On**: Task 9
 - **Description**: 
-  - 对 `python/include/`、`python/src/`、`python/pycaffe/python/pycaffe/_caffe.cpp` 下所有 .hpp/.cpp/.cc/.h 文件执行 grep，确认无 boost::/glog/gflags 残留
+  - 对 `caffe-slim/include/`、`caffe-slim/src/`、`caffe-slim/pycaffe/python/pycaffe/_caffe.cpp` 下所有 .hpp/.cpp/.cc/.h 文件执行 grep，确认无 boost::/glog/gflags 残留
   - 检查 CMakeLists.txt 和 cmake/ 目录确认无 find_package(Boost)/find_package(Glog)/find_package(GFlags)
   - 确认 target_link_libraries 中没有 boost_*/glog/gflags 库
   - 运行 `dumpbin /dependents`（Windows）或 `ldd`（Linux）检查生成的 _caffe 共享库，确认不依赖 boost_*-mt/boost_python/glog/gflags DLL
@@ -318,7 +318,7 @@
   - 如有残留，逐一修复
 - **Acceptance Criteria Addressed**: AC-1, AC-2
 - **Test Requirements**:
-  - `programmatic` TR-12.1: `grep -rn "boost::\|#include <boost\|BOOST_PYTHON_MODULE\|bp::"` python/include python/src python/pycaffe/python/pycaffe/_caffe.cpp 返回空（compat 头文件中 using 别名除外）
-  - `programmatic` TR-12.2: `grep -rn "glog\|#include <glog\|google::InitGoogleLogging\|google::InstallFailureSignalHandler\|FLAGS_" python/include python/src python/pycaffe/python/pycaffe/_caffe.cpp` 返回空
-  - `programmatic` TR-12.3: `grep -rn "find_package.*[Bb]oost\|find_package.*[Gg]log\|find_package.*[Gg]flags" python/CMakeLists.txt python/pycaffe/CMakeLists.txt` 返回空
+  - `programmatic` TR-12.1: `grep -rn "boost::\|#include <boost\|BOOST_PYTHON_MODULE\|bp::"` caffe-slim/include caffe-slim/src caffe-slim/pycaffe/python/pycaffe/_caffe.cpp 返回空（compat 头文件中 using 别名除外）
+  - `programmatic` TR-12.2: `grep -rn "glog\|#include <glog\|google::InitGoogleLogging\|google::InstallFailureSignalHandler\|FLAGS_" caffe-slim/include caffe-slim/src caffe-slim/pycaffe/python/pycaffe/_caffe.cpp` 返回空
+  - `programmatic` TR-12.3: `grep -rn "find_package.*[Bb]oost\|find_package.*[Gg]log\|find_package.*[Gg]flags" python/CMakeLists.txt caffe-slim/pycaffe/CMakeLists.txt` 返回空
   - `programmatic` TR-12.4: dumpbin/ldd 检查 _caffe 共享库无 boost_glog_gflags 动态依赖

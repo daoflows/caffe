@@ -12,7 +12,7 @@
 - ✅ define_subroutine=True 支持IR复用编译
 - ✅ 通过 nn.emit() 统一变量绑定
 
-合并到 python/operators/layers.py 时：
+合并到 caffe-slim/operators/layers.py 时：
 1. 将本类添加到文件末尾
 2. 更新 __all__ 导出列表
 3. 确保 import 语句已包含（dataclass, field, tvm.relax等）

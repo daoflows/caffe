@@ -19,7 +19,7 @@ version: "1.0"
 - [x] `detector.py` 中所有 `io.Transformer`、`io.load_image`、`io.resize_image` 已替换为 `transforms.` 前缀
 
 ## 脚本文件更新检查
-- [x] `python/scripts/test_new_features.sh` 中所有 `pycaffe.io` 引用已改为 `pycaffe.transforms`
+- [x] `caffe-slim/scripts/test_new_features.sh` 中所有 `pycaffe.io` 引用已改为 `pycaffe.transforms`
 - [x] `docker/local/conda/runtest.sh` 中所有 `pycaffe.io` 引用已改为 `pycaffe.transforms`
 - [x] `docker/local/conda/test_new_features.sh` 中所有 `pycaffe.io` 引用已改为 `pycaffe.transforms`
 - [x] `docker/modules/pycaffe/scripts/verify-parity.sh` 中所有 `pycaffe.io` 引用已改为 `pycaffe.transforms`

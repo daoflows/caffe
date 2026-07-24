@@ -28,7 +28,7 @@
 |------|------|
 | Python 模块文件数 | 6（caffe_pb2.py, caffe_utils.py, caffe_fuse.py, utils.py, test_l2norm.py, gen_proto.py） |
 | Proto 定义文件 | 2（protos/caffe.proto 外层，caffex/src/caffe/proto/caffe.proto 原始） |
-| 生成的 PB 代码 | 2（python/caffe_pb2.py, python/protos/caffe_pb2.py） |
+| 生成的 PB 代码 | 2（python/caffe_pb2.py, caffe-slim/protos/caffe_pb2.py） |
 | TVM Relax 算子 | 3（Conv2D, ConvTranspose2D, L2Norm） |
 | 测试用例 | 7（4 个 proto 测试 + 3 个 TVM 数值测试） |
 | 架构分析文档 | 1 份深度分析（~5000 字 caffe-architecture-wiki） |

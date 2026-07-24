@@ -68,10 +68,10 @@ check 'caffe.proto import' \
     python -c "import caffe.proto; print('OK')"
 
 # ---- 可选：执行 run_test.sh ----
-if [ -f /workspace/python/scripts/run_test.sh ]; then
+if [ -f /workspace/caffe-slim/scripts/run_test.sh ]; then
     echo ''
     echo '--- 执行 run_test.sh ---'
-    if bash /workspace/python/scripts/run_test.sh; then
+    if bash /workspace/caffe-slim/scripts/run_test.sh; then
         green 'run_test.sh PASS'
         PASS=$((PASS + 1))
     else

@@ -1,7 +1,7 @@
 # Python 目录 Dataclass 系统性重构 - Product Requirement Document
 
 ## Overview
-- **Summary**: 对 `python/` 目录下所有 Python 代码文件进行系统性重构，全面采用 Python 3.14+ dataclass 特性。将合适的类转换为数据类，利用 `@dataclass` 装饰器优化类定义，合理使用 `field()` 函数配置字段属性（默认值、类型提示、比较规则、初始化行为等），同时保留原有功能逻辑，提高代码可读性和维护性，符合 PEP 8 编码规范。
+- **Summary**: 对 `caffe-slim/` 目录下所有 Python 代码文件进行系统性重构，全面采用 Python 3.14+ dataclass 特性。将合适的类转换为数据类，利用 `@dataclass` 装饰器优化类定义，合理使用 `field()` 函数配置字段属性（默认值、类型提示、比较规则、初始化行为等），同时保留原有功能逻辑，提高代码可读性和维护性，符合 PEP 8 编码规范。
 - **Purpose**: 现代化 Python 代码结构，利用 dataclass 减少样板代码（`__init__`、`__repr__`、`__eq__` 等），提高类型安全性，使数据结构定义更清晰。
 - **Target Users**: PyCaffe 框架开发者、维护者、贡献者
 

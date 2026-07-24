@@ -7,7 +7,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: None
 - **Description**: 
-  - 将 `python/pycaffe/python/pycaffe/io.py` 物理重命名为 `python/pycaffe/python/pycaffe/transforms.py`
+  - 将 `caffe-slim/pycaffe/python/pycaffe/io.py` 物理重命名为 `caffe-slim/pycaffe/python/pycaffe/transforms.py`
   - 使用 git mv 以保留文件历史（如在git仓库中）
   - 确认 transforms.py 内容与原 io.py 完全一致，无任何内容修改
 - **Acceptance Criteria Addressed**: [AC-1]
@@ -21,7 +21,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/__init__.py`
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/__init__.py`
   - 将第7行 `from . import io` 改为 `from . import transforms`
   - 将第8行 `from .io import DataProcessor, Transformer, load_image, load_image_batch, resize_image, oversample` 改为 `from .transforms import DataProcessor, Transformer, load_image, load_image_batch, resize_image, oversample`
 - **Acceptance Criteria Addressed**: [AC-2]
@@ -35,7 +35,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/pycaffe.py`
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/pycaffe.py`
   - 将第14行 `from . import io` 改为 `from . import transforms`
   - 检查 pycaffe.py 中是否有其他对 `io.` 的引用（当前分析中未发现，但需确认）
 - **Acceptance Criteria Addressed**: [AC-2]
@@ -49,7 +49,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/classifier.py`
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/classifier.py`
   - 将第10行 `from . import io` 改为 `from . import transforms`
   - 将第32行 `self.transformer = io.Transformer(` 改为 `self.transformer = transforms.Transformer(`
   - 将第72行 `input_[ix] = io.resize_image(in_, self.image_dims)` 改为 `input_[ix] = transforms.resize_image(in_, self.image_dims)`
@@ -65,7 +65,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/detector.py`
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/detector.py`
   - 将第21行 `from . import io` 改为 `from . import transforms`
   - 将第44行 `self.transformer = io.Transformer(` 改为 `self.transformer = transforms.Transformer(`
   - 将第76行 `image = io.load_image(image_fname).astype(np.float32)` 改为 `image = transforms.load_image(image_fname).astype(np.float32)`
@@ -77,11 +77,11 @@ version: "1.0"
   - `programmatic` TR-5.3: 替换后代码语法正确
 - **Notes**: 共3处 io.xxx 引用
 
-## [x] Task 6: 更新 python/scripts/test_new_features.sh
+## [x] Task 6: 更新 caffe-slim/scripts/test_new_features.sh
 - **Priority**: medium
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/scripts/test_new_features.sh` 中的 Python 代码
+  - 修改 `caffe-slim/scripts/test_new_features.sh` 中的 Python 代码
   - 将第15行 `print('Transformer:', pycaffe.io.Transformer)` 改为 `print('Transformer:', pycaffe.transforms.Transformer)`
   - 将第22行 `from pycaffe.io import resize_image, oversample, Transformer as FastTransformer` 改为 `from pycaffe.transforms import resize_image, oversample, Transformer as FastTransformer`
 - **Acceptance Criteria Addressed**: [AC-3]
@@ -132,7 +132,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Tasks 2-9
 - **Description**: 
-  - 在 `python/pycaffe/`、`python/scripts/`、`docker/` 目录下递归搜索所有 `.py` 和 `.sh` 文件
+  - 在 `caffe-slim/pycaffe/`、`caffe-slim/scripts/`、`docker/` 目录下递归搜索所有 `.py` 和 `.sh` 文件
   - 确认不再有任何对 `.io` 模块或 `pycaffe.io` 的引用（caffex/ 目录除外）
   - 特别检查是否有遗漏的引用点
 - **Acceptance Criteria Addressed**: [AC-2, AC-3, AC-5]

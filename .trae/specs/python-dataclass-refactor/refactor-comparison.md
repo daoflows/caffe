@@ -119,7 +119,7 @@ define_subroutine: bool = field(default=True, repr=False)
 
 ### 4. 新增 dataclasses.py 模块
 
-新增 `python/pycaffe/python/pycaffe/dataclasses.py` 文件，包含11个纯数据类，全部使用 `slots=True` 进行内存优化：
+新增 `caffe-slim/pycaffe/python/pycaffe/dataclasses.py` 文件，包含11个纯数据类，全部使用 `slots=True` 进行内存优化：
 
 | Dataclass | 用途 | field() 使用 | slots |
 |-----------|------|-------------|-------|

@@ -2,7 +2,7 @@
 
 > **日期**: 2026-07-23
 > **环境**: WSL2 (Ubuntu-24.04), Docker, Ubuntu 26.04 基础镜像
-> **目标**: 为 `caffex/python`(废弃) 和 `python/pycaffe`(主力) 两个模块构建独立 Docker 镜像，确保 pycaffe 测试结果与废弃模块一致
+> **目标**: 为 `caffex/python`(废弃) 和 `caffe-slim/pycaffe`(主力) 两个模块构建独立 Docker 镜像，确保 pycaffe 测试结果与废弃模块一致
 
 ---
 
@@ -72,7 +72,7 @@ Affected: caffex/python/caffe/_caffe.cpp L377-579
 
 ---
 
-### 3. `python/pycaffe/CMakeLists.txt` — 移除 `BOOST_SYSTEM_LIBRARY` 查找
+### 3. `caffe-slim/pycaffe/CMakeLists.txt` — 移除 `BOOST_SYSTEM_LIBRARY` 查找
 
 **Commit Message:**
 ```
@@ -83,7 +83,7 @@ find_library(BOOST_SYSTEM_LIBRARY boost_system) produces a harmless
 but noisy "not found" warning. Remove the find_library call and the
 entry from _optional_libs since the library is never needed.
 
-Affected: python/pycaffe/CMakeLists.txt L134-136, L202
+Affected: caffe-slim/pycaffe/CMakeLists.txt L134-136, L202
 ```
 
 **变更:**
@@ -147,7 +147,7 @@ Affected: python/pycaffe/CMakeLists.txt L134-136, L202
 |------|----------|------------|
 | `caffex/Makefile` | 修改 | #1: 移除 boost_system |
 | `caffex/python/caffe/_caffe.cpp` | 修改 | #2: 修复 segfault |
-| `python/pycaffe/CMakeLists.txt` | 修改 | #3: 移除 BOOST_SYSTEM_LIBRARY |
+| `caffe-slim/pycaffe/CMakeLists.txt` | 修改 | #3: 移除 BOOST_SYSTEM_LIBRARY |
 | `docker/modules/python-module/Dockerfile` | 修改 | #4: 构建修复 |
 | `docker/modules/pycaffe/Dockerfile` | 修改 | #5: Python 3.14 适配 |
 | `.dockerignore` | 新增 | 构建上下文优化 |

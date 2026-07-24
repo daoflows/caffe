@@ -1,7 +1,7 @@
 # Python 目录结构整理 Spec
 
 ## Why
-`python/` 目录目前文件类型混杂（库模块、生成代码、脚本、测试平铺在同一层），且存在命名不清晰（`utils.py` 实际是 TVM 算子而非通用工具）、缺少包层级组织的问题，影响可维护性和可读性。
+`caffe-slim/` 目录目前文件类型混杂（库模块、生成代码、脚本、测试平铺在同一层），且存在命名不清晰（`utils.py` 实际是 TVM 算子而非通用工具）、缺少包层级组织的问题，影响可维护性和可读性。
 
 ## What Changes
 - 将 `caffe_pb2.py`、`caffe_utils.py`、`caffe_fuse.py` 归入新包 `caffeproto/`，统一 protobuf 相关模块
@@ -15,8 +15,8 @@
 
 ## Impact
 - Affected specs: 无（新 spec）
-- Affected code: `python/` 下 8 个文件移动/重命名，5 个文件内容修改，`README.md` 路径引用更新
-- `python/pycaffe/` 子目录不受影响，保持原样
+- Affected code: `caffe-slim/` 下 8 个文件移动/重命名，5 个文件内容修改，`README.md` 路径引用更新
+- `caffe-slim/pycaffe/` 子目录不受影响，保持原样
 
 ## 目标结构
 
@@ -74,7 +74,7 @@ python/
 系统 SHALL 将 `test_l2norm.py` 归入 `tests/` 目录，其 import 路径适配新包结构。
 
 #### Scenario: 测试可正常运行
-- **WHEN** 在 `python/` 目录下执行 `python -m pytest tests/test_l2norm.py` 或 `python tests/test_l2norm.py`
+- **WHEN** 在 `caffe-slim/` 目录下执行 `python -m pytest tests/test_l2norm.py` 或 `python tests/test_l2norm.py`
 - **THEN** 所有测试通过，import 无报错
 
 ## MODIFIED Requirements

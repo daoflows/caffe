@@ -48,7 +48,7 @@ analyze:
 
 # ==============================================================================
 # python-module 镜像（主力模块）
-# 含 Caffe 编译 + python/ 目录（caffeproto, operators, protos, scripts, tests）
+# 含 Caffe 编译 + caffe-slim/ 目录（caffeproto, operators, protos, scripts, tests）
 # ==============================================================================
 python-module:
 	@echo "=============================================="

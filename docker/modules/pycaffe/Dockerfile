@@ -1,7 +1,7 @@
 # ==============================================================================
 # PyCaffe 模块镜像 — 基于 caffe-cpu:python-module 构建
 #
-# 说明：caffex/python 已废弃，python/pycaffe 是新的 PyCaffe 模块。
+# 说明：caffex/python 已废弃，caffe-slim/pycaffe 是新的 PyCaffe 模块。
 #       本镜像构建并安装 pycaffe wheel，确保与 caffex/python 行为一致。
 #
 # 构建目标:
@@ -31,7 +31,7 @@ RUN set -eux; \
     ldconfig
 
 # 复制 pycaffe 源码
-COPY python/pycaffe ${WORKSPACE_DIR}/pycaffe
+COPY caffe-slim/pycaffe ${WORKSPACE_DIR}/pycaffe
 
 # 安装 Python build 工具和构建依赖（venv 已内置在 Python 3.14 中）
 # --no-isolation 跳过隔离环境，避免 EXTERNALLY-MANAGED 导致的 pip 安装失败

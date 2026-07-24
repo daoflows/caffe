@@ -495,12 +495,12 @@ dataclass 重构知识图谱
 
 | 文件 | 类型 | 路径 |
 |------|------|------|
-| dataclasses.py | 新增 | [python/pycaffe/python/pycaffe/dataclasses.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/dataclasses.py) |
-| test_dataclasses.py | 新增 | [python/tests/test_dataclasses.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/tests/test_dataclasses.py) |
-| caffe_fuse.py | 修改 | [python/caffeproto/caffe_fuse.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/caffeproto/caffe_fuse.py) |
-| layers.py | 修改 | [python/operators/layers.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/operators/layers.py) |
-| io.py | 修改 | [python/pycaffe/python/pycaffe/io.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/io.py) |
-| net_spec.py | 修改 | [python/pycaffe/python/pycaffe/net_spec.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/net_spec.py) |
+| dataclasses.py | 新增 | [caffe-slim/pycaffe/python/pycaffe/dataclasses.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/dataclasses.py) |
+| test_dataclasses.py | 新增 | [caffe-slim/tests/test_dataclasses.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/tests/test_dataclasses.py) |
+| caffe_fuse.py | 修改 | [caffe-slim/caffeproto/caffe_fuse.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/caffeproto/caffe_fuse.py) |
+| layers.py | 修改 | [caffe-slim/operators/layers.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/operators/layers.py) |
+| io.py | 修改 | [caffe-slim/pycaffe/python/pycaffe/io.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/io.py) |
+| net_spec.py | 修改 | [caffe-slim/pycaffe/python/pycaffe/net_spec.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/pycaffe/python/pycaffe/net_spec.py) |
 
 ### 文档变更
 

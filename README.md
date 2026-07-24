@@ -24,7 +24,7 @@ pip install protobuf -i https://pypi.tuna.tsinghua.edu.cn/simple
 使用内置的 Python 生成脚本（自动检查版本一致性）：
 
 ```bash
-python python/scripts/gen_proto.py
+python caffe-slim/scripts/gen_proto.py
 ```
 
 脚本会自动：查找 protoc → 检查版本一致性 → 编译 proto → 验证生成代码。
@@ -36,7 +36,7 @@ python python/scripts/gen_proto.py
 ### 方式三：直接调用 protoc
 
 ```bash
-protoc --proto_path=python/protos --python_out=python/caffeproto python/protos/caffe.proto
+protoc --proto_path=caffe-slim/protos --python_out=caffe-slim/caffeproto caffe-slim/protos/caffe.proto
 ```
 
 ## 添加新算子（四步法）

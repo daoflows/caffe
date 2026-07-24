@@ -35,17 +35,17 @@ examples/op-extension/
 
 | 步骤 | 操作 | 文件 | 验证点 |
 |------|------|------|--------|
-| 1️⃣ | 扩展 Protocol Buffer | `python/protos/caffe.proto` 添加 `HardSigmoidParameter` | protoc 编译无错误 |
-| 2️⃣ | 重新生成 Python 代码 | 运行 `python python/scripts/gen_proto.py` | 新字段可访问、版本一致 |
-| 3️⃣ | 实现 TVM Relax 模块 | `python/operators/layers.py` 添加 `HardSigmoid` 类 | 前向计算数值正确 |
-| 4️⃣ | 添加测试矩阵 | `python/tests/test_hardsigmoid.py` | 5类测试全部 PASS |
+| 1️⃣ | 扩展 Protocol Buffer | `caffe-slim/protos/caffe.proto` 添加 `HardSigmoidParameter` | protoc 编译无错误 |
+| 2️⃣ | 重新生成 Python 代码 | 运行 `python caffe-slim/scripts/gen_proto.py` | 新字段可访问、版本一致 |
+| 3️⃣ | 实现 TVM Relax 模块 | `caffe-slim/operators/layers.py` 添加 `HardSigmoid` 类 | 前向计算数值正确 |
+| 4️⃣ | 添加测试矩阵 | `caffe-slim/tests/test_hardsigmoid.py` | 5类测试全部 PASS |
 
 ## 快速开始
 
 ```bash
 # 1. 应用proto补丁（手动合并到python/protos/caffe.proto）
 # 2. 生成代码
-python python/scripts/gen_proto.py
+python caffe-slim/scripts/gen_proto.py
 # 3. 将code/hardsigmoid_layer.py合并到python/operators/layers.py
 # 4. 运行测试
 python -m pytest code/test_hardsigmoid.py -v

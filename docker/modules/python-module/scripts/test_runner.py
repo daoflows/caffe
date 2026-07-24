@@ -164,7 +164,7 @@ test("set_mode_cpu", lambda: caffe.set_mode_cpu())
 print(f"\n--- Python Path Configuration ---")
 
 test("PYTHONPATH includes caffex/python", lambda: "/workspace/caffex/python" in sys.path)
-test("PYTHONPATH includes /workspace/python", lambda: "/workspace/python" in sys.path)
+test("PYTHONPATH includes /workspace/caffe-slim", lambda: "/workspace/caffe-slim" in sys.path)
 
 print(f"\n--- Optional Dependencies ---")
 

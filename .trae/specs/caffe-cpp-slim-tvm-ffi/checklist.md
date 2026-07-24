@@ -25,11 +25,11 @@
 
 | 检查项 | 验证方式 | 预期结果 | 状态 |
 |--------|----------|----------|------|
-| boost 头文件引用完全移除 | `grep -rn "#include <boost" python/include python/src python/pycaffe/python/pycaffe/` | 返回空结果（compat/ 别名除外） | ☑ |
-| glog 头文件引用完全移除 | `grep -rn "#include <glog\|#include \"glog" python/include python/src` | 返回空结果 | ☑ |
-| gflags 头文件引用完全移除 | `grep -rn "#include <gflags\|gflags::ParseCommandLineFlags" python/include python/src` | 返回空结果 | ☑ |
-| boost 命名空间使用完全移除 | `grep -rn "boost::" python/include python/src` | 返回空结果（compat 层 using 别名除外） | ☑ |
-| google/ 命名空间使用完全移除 | `grep -rn "google::" python/include python/src` | 返回空结果 | ☑ |
+| boost 头文件引用完全移除 | `grep -rn "#include <boost" caffe-slim/include caffe-slim/src caffe-slim/pycaffe/python/pycaffe/` | 返回空结果（compat/ 别名除外） | ☑ |
+| glog 头文件引用完全移除 | `grep -rn "#include <glog\|#include \"glog" caffe-slim/include caffe-slim/src` | 返回空结果 | ☑ |
+| gflags 头文件引用完全移除 | `grep -rn "#include <gflags\|gflags::ParseCommandLineFlags" caffe-slim/include caffe-slim/src` | 返回空结果 | ☑ |
+| boost 命名空间使用完全移除 | `grep -rn "boost::" caffe-slim/include caffe-slim/src` | 返回空结果（compat 层 using 别名除外） | ☑ |
+| google/ 命名空间使用完全移除 | `grep -rn "google::" caffe-slim/include caffe-slim/src` | 返回空结果 | ☑ |
 | CMake 中无 Boost/Glog/Gflags 查找 | `grep -rn "find_package.*[Bb]oost\|find_package.*[Gg]log\|find_package.*[Gg]flags" python/` | 返回空结果 | ☑ |
 | target_link_libraries 中无 boost/glog/gflags | 检查 python/CMakeLists.txt | 仅链接 tvm_ffi、protobuf、BLAS、Threads | ☑ |
 | 共享库无 boost/glog/gflags 动态依赖 | `ldd _caffe.so`（WSL/Linux） | 不包含 boost_*/glog/gflags .so | ☑ |
@@ -121,7 +121,7 @@
 
 | 检查项 | 验证方式 | 预期结果 | 状态 |
 |--------|----------|----------|------|
-| 目录结构符合 include/src 分层 | 检查python/目录 | include/caffe/放头文件，src/caffe/放源文件 | ☑ |
+| 目录结构符合 include/src 分层 | 检查caffe-slim/目录 | include/caffe/放头文件，src/caffe/放源文件 | ☑ |
 | 编译警告级别合理 | 构建日志 | 第三方库警告允许，无新引入的核心代码警告 | ☑ |
 | 兼容层 header-only | 检查include/caffe/compat/ | 11个compat头文件，无对应.cpp | ☑ |
 | 原始业务逻辑未破坏 | 对比caffex源码 | 核心算法（SyncedMemory/Blob/Layer/Net）仅头文件替换，逻辑无修改 | ☑ |

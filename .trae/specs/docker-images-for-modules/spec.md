@@ -36,10 +36,10 @@ caffex/python/ (废弃)  ──→  python/ (主力维护)
     │ 原始 BVLC PyCaffe          │ caffeproto/ + operators/ + protos/ + scripts/ + tests/
     │ (Makefile 构建)            │ 新架构：caffeproto 解耦、operators 独立、测试完善
     │                            │
-    └──────── 测试对标 ──────────→  python/pycaffe/python/pycaffe/ (PyCaffe 模块)
+    └──────── 测试对标 ──────────→  caffe-slim/pycaffe/python/pycaffe/ (PyCaffe 模块)
                                   │
                                   pycaffe/ 目录：scikit-build-core + CMake 构建 wheel
-                                  python/pycaffe/ 目录：_caffe.cpp + Python 模块源码
+                                  caffe-slim/pycaffe/ 目录：_caffe.cpp + Python 模块源码
                                   测试对标：caffex/python/caffe/test/ 的结果
 ```
 
@@ -48,35 +48,35 @@ caffex/python/ (废弃)  ──→  python/ (主力维护)
 | 模块 | 路径 | 说明 |
 |------|------|------|
 | 废弃模块 | `caffex/python/caffe/` | 原始 BVLC PyCaffe，Makefile 构建，不再维护 |
-| 主力模块 | `python/` | 新架构根目录，包含 caffeproto/operators/protos/scripts/tests |
-| Proto 层 | `python/caffeproto/` | caffe_pb2 封装（caffe_fuse.py, caffe_utils.py） |
-| 算子层 | `python/operators/` | TVM Relax 算子实现（layers.py 含 L2Norm） |
-| Proto 源码 | `python/protos/` | caffe.proto + 生成的 caffe_pb2.py |
-| PyCaffe 构建 | `python/pycaffe/` | CMakeLists.txt + pyproject.toml + build.sh |
-| PyCaffe 源码 | `python/pycaffe/python/pycaffe/` | _caffe.cpp + 8 个 Python 模块 |
-| 测试 | `python/tests/` | verify.py + test_inference.py + test_l2norm.py |
-| 脚本 | `python/scripts/` | gen_proto.py + run_test.sh + 诊断脚本 |
+| 主力模块 | `caffe-slim/` | 新架构根目录，包含 caffeproto/operators/protos/scripts/tests |
+| Proto 层 | `caffe-slim/caffeproto/` | caffe_pb2 封装（caffe_fuse.py, caffe_utils.py） |
+| 算子层 | `caffe-slim/operators/` | TVM Relax 算子实现（layers.py 含 L2Norm） |
+| Proto 源码 | `caffe-slim/protos/` | caffe.proto + 生成的 caffe_pb2.py |
+| PyCaffe 构建 | `caffe-slim/pycaffe/` | CMakeLists.txt + pyproject.toml + build.sh |
+| PyCaffe 源码 | `caffe-slim/pycaffe/python/pycaffe/` | _caffe.cpp + 8 个 Python 模块 |
+| 测试 | `caffe-slim/tests/` | verify.py + test_inference.py + test_l2norm.py |
+| 脚本 | `caffe-slim/scripts/` | gen_proto.py + run_test.sh + 诊断脚本 |
 
 ### 测试对标关系
-旧 `caffex/python/caffe/test/` 的测试结果，需要在新 `python/pycaffe/python/pycaffe/` 镜像中复现一致：
+旧 `caffex/python/caffe/test/` 的测试结果，需要在新 `caffe-slim/pycaffe/python/pycaffe/` 镜像中复现一致：
 - `test_net.py` (TestNet/TestLevels/TestStages/TestAllInOne) → pycaffe 镜像中 Net 创建/前向/反向/保存/加载行为一致
 - `test_solver.py` → pycaffe 镜像中 Solver 行为一致
 - `test_coord_map.py` / `test_draw.py` / `test_io.py` → pycaffe 镜像中对应模块行为一致
 
 ## Why
-`caffex/python` 已废弃，`python/` 是后续主力维护模块。需要为两个独立模块分别构建 Docker 镜像：
-1. `python/` 模块镜像（caffeproto + operators + protos 完整环境）
-2. `python/pycaffe/python/pycaffe` 模块镜像（PyCaffe wheel 独立部署）
+`caffex/python` 已废弃，`caffe-slim/` 是后续主力维护模块。需要为两个独立模块分别构建 Docker 镜像：
+1. `caffe-slim/` 模块镜像（caffeproto + operators + protos 完整环境）
+2. `caffe-slim/pycaffe/python/pycaffe` 模块镜像（PyCaffe wheel 独立部署）
 并确保 pycaffe 镜像的测试结果与废弃的 `caffex/python` 测试结果一致。
 
 ## What Changes
-- 新增 `docker/modules/python-module/Dockerfile`：为 `python/` 模块构建独立镜像（含完整 Caffe 编译 + Python 绑定 + caffeproto + operators）
-- 新增 `docker/modules/pycaffe/Dockerfile`：为 `python/pycaffe/python/pycaffe` 模块构建独立镜像（基于预编译 libcaffe.so 构建 wheel 并安装）
+- 新增 `docker/modules/python-module/Dockerfile`：为 `caffe-slim/` 模块构建独立镜像（含完整 Caffe 编译 + Python 绑定 + caffeproto + operators）
+- 新增 `docker/modules/pycaffe/Dockerfile`：为 `caffe-slim/pycaffe/python/pycaffe` 模块构建独立镜像（基于预编译 libcaffe.so 构建 wheel 并安装）
 - 新增 `docker/modules/python-module/scripts/`：python-module 镜像专用辅助脚本（含测试对标验证）
 - 新增 `docker/modules/pycaffe/scripts/`：pycaffe 镜像专用辅助脚本（含与 caffex/python 测试对标验证）
 - 新增 `docker/modules/Makefile`：统一构建入口，含复盘分析输出
 - 复用现有 `docker/local/conda/Dockerfile` 中的多阶段构建模式（base-system → base-builder → builder → runtime）
-- 复用现有 `python/scripts/` 中的 gen_proto.py、run_test.sh 等脚本
+- 复用现有 `caffe-slim/scripts/` 中的 gen_proto.py、run_test.sh 等脚本
 
 ## Impact
 - Affected specs: 无（全新 spec）
@@ -87,18 +87,18 @@ caffex/python/ (废弃)  ──→  python/ (主力维护)
 ## ADDED Requirements
 
 ### Requirement: python-module 独立镜像（主力模块）
-系统 SHALL 为 `python/` 主力模块提供独立 Docker 镜像构建能力，镜像包含完整的 Caffe C++ 编译产物、Python 绑定（`_caffe.so`）、caffeproto 层、operators 层及所有运行时依赖。
+系统 SHALL 为 `caffe-slim/` 主力模块提供独立 Docker 镜像构建能力，镜像包含完整的 Caffe C++ 编译产物、Python 绑定（`_caffe.so`）、caffeproto 层、operators 层及所有运行时依赖。
 
 #### Scenario: 构建 python-module 镜像
 - **WHEN** 在 WSL 中执行 `docker build -t caffe-cpu:python-module --target runtime -f docker/modules/python-module/Dockerfile .`
-- **THEN** 成功生成包含完整 `python/` 模块环境的镜像
+- **THEN** 成功生成包含完整 `caffe-slim/` 模块环境的镜像
 - **AND** 镜像中 `python -c "import caffe"` 可成功导入
 - **AND** 镜像中 `caffe.Net`、`caffe.SGDSolver` 等核心 API 可用
 - **AND** 镜像中 `from caffeproto import caffe_pb2` 可成功导入
 - **AND** 镜像中 `from operators.layers import L2Norm` 可成功导入（如 TVM 可用）
 
 #### Scenario: python-module 镜像运行时验证
-- **WHEN** 启动容器并执行 `python/scripts/run_test.sh`
+- **WHEN** 启动容器并执行 `caffe-slim/scripts/run_test.sh`
 - **THEN** 所有测试通过（含 caffeproto、operators、tests 下的测试）
 
 #### Scenario: python-module 镜像可移植性
@@ -107,7 +107,7 @@ caffex/python/ (废弃)  ──→  python/ (主力维护)
 - **AND** 镜像大小控制在合理范围内（通过多阶段构建优化）
 
 ### Requirement: pycaffe 独立镜像（对标废弃模块）
-系统 SHALL 为 `python/pycaffe/python/pycaffe` 模块提供独立 Docker 镜像构建能力，镜像包含预编译的 libcaffe.so、通过 scikit-build-core 构建的 pycaffe wheel 包及所有 Python 运行时依赖。**必须确保 pycaffe 镜像的测试结果与废弃的 `caffex/python` 测试结果一致。**
+系统 SHALL 为 `caffe-slim/pycaffe/python/pycaffe` 模块提供独立 Docker 镜像构建能力，镜像包含预编译的 libcaffe.so、通过 scikit-build-core 构建的 pycaffe wheel 包及所有 Python 运行时依赖。**必须确保 pycaffe 镜像的测试结果与废弃的 `caffex/python` 测试结果一致。**
 
 #### Scenario: 构建 pycaffe 镜像（依赖 python-module 镜像）
 - **WHEN** 先构建好 `caffe-cpu:python-module` 镜像作为基础

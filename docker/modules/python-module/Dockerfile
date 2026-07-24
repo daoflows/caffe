@@ -1,6 +1,6 @@
 # ============================================================================
 # python-module Docker 镜像
-# 为 python/ 模块构建独立 Docker 镜像（caffex/python 已废弃，python/ 是主力模块）
+# 为 caffe-slim/ 模块构建独立 Docker 镜像（caffex/python 已废弃，caffe-slim/ 是主力模块）
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -121,8 +121,8 @@ COPY --from=builder /workspace/caffex/python /workspace/caffex/python
 COPY --from=builder /workspace/caffex/distribute /workspace/caffex/distribute
 COPY --from=builder /workspace/caffex/include /workspace/caffex/include
 
-# 复制 python/ 目录（主模块）
-COPY python/ /workspace/python/
+# 复制 caffe-slim/ 目录（主模块）
+COPY caffe-slim/ /workspace/caffe-slim/
 
 # 替换 caffex 中的旧 caffe_pb2.py 为 caffeproto 重导出，避免 proto descriptor 重复注册
 RUN printf '%s\n' \
@@ -147,7 +147,7 @@ RUN set -eux; \
     ldconfig
 
 # 设置 PYTHONPATH
-ENV PYTHONPATH=/workspace/caffex/python:/workspace/python:${PYTHONPATH}
+ENV PYTHONPATH=/workspace/caffex/python:/workspace/caffe-slim:${PYTHONPATH}
 ENV LD_LIBRARY_PATH=/workspace/caffex/build/lib:${LD_LIBRARY_PATH}
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \

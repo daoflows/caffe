@@ -159,7 +159,7 @@
 ---
 
 ## Overview
-- **Summary**: 对 BVLC Caffe（caffex）的 C++ 核心库进行依赖瘦身，使用 tvm-ffi 库（C++17）替换 glog 和 boost 等老旧依赖。瘦身完成的 C++ 核心代码（include/src）放置到 `external/chaos/caffe/python/` 目录下，与现有 Python 层（pycaffe/）整合。原有的 `python/pycaffe/python/pycaffe/_caffe.cpp`（boost::python绑定）重写为 tvm-ffi FFI 导出模块，彻底移除 boost::python 依赖。最终形成一个不依赖 boost、不依赖 glog、不依赖 gflags、使用 C++17 标准库 + tvm-ffi 的轻量 Caffe 推理核心库，通过 tvm-ffi 的跨语言 FFI 机制提供 Python 绑定。
+- **Summary**: 对 BVLC Caffe（caffex）的 C++ 核心库进行依赖瘦身，使用 tvm-ffi 库（C++17）替换 glog 和 boost 等老旧依赖。瘦身完成的 C++ 核心代码（include/src）放置到 `external/chaos/caffe/python/` 目录下，与现有 Python 层（pycaffe/）整合。原有的 `caffe-slim/pycaffe/python/pycaffe/_caffe.cpp`（boost::python绑定）重写为 tvm-ffi FFI 导出模块，彻底移除 boost::python 依赖。最终形成一个不依赖 boost、不依赖 glog、不依赖 gflags、使用 C++17 标准库 + tvm-ffi 的轻量 Caffe 推理核心库，通过 tvm-ffi 的跨语言 FFI 机制提供 Python 绑定。
 - **Purpose**: 原始 caffex 依赖 boost（10+组件）和 glog/gflags，编译配置复杂、跨平台问题频发（NumPy 2.x ABI断裂、Boost.Python组件名变更等），与现代 Python 生态集成困难。通过替换为 tvm-ffi + C++17 标准库，大幅减少外部依赖，提高可维护性和构建效率，使得 pycaffe 可以作为独立 wheel 分发包使用。
 - **Target Users**: 需要轻量 Caffe 推理核心、通过 Python 调用 Caffe 模型的开发者；将 Caffe 作为依赖嵌入其他项目的集成者；需要跨平台（Windows/Linux/macOS）构建 pycaffe 的用户。
 
@@ -226,7 +226,7 @@
 - **FR-2**: 核心抽象（Blob、SyncedMemory、Layer、Net、Solver 头文件和源文件）完成依赖替换，无 boost/glog/gflags 引用
 - **FR-3**: 必要的 util 组件（math_functions、common、blocking_queue、internal_thread、benchmark、io、signal_handler、rng、upgrade_proto、format、device_alternate、filler、insert_splits、db stub）完成依赖替换
 - **FR-4**: 核心推理 Layer 实现（推理路径所需的常用层：NeuronLayer 基类、ReLU、Convolution、Pooling、InnerProduct、Softmax、SoftmaxWithLoss、BatchNorm、Scale、Eltwise、Concat、Split、Dropout、Reshape、Flatten、Accuracy、ArgMax、Input、MemoryData 等）完成依赖替换
-- **FR-5**: 重写 `python/pycaffe/python/pycaffe/_caffe.cpp` 为 tvm-ffi FFI 导出模块（移除所有 boost::python 代码，使用 `TVM_FFI_DLL_EXPORT_TYPED_FUNC` 导出 C ABI 函数），采用 handle（uintptr_t/void*）模式管理 Net/Blob/Solver 对象，使用 tvm::ffi::Tensor（DLPack）传递张量数据
+- **FR-5**: 重写 `caffe-slim/pycaffe/python/pycaffe/_caffe.cpp` 为 tvm-ffi FFI 导出模块（移除所有 boost::python 代码，使用 `TVM_FFI_DLL_EXPORT_TYPED_FUNC` 导出 C ABI 函数），采用 handle（uintptr_t/void*）模式管理 Net/Blob/Solver 对象，使用 tvm::ffi::Tensor（DLPack）传递张量数据
 - **FR-6**: 提供统一的 `python/CMakeLists.txt` 构建系统，编译：(1) Caffe 核心静态库（caffe_core），(2) tvm-ffi FFI 共享库（_caffe_ffi 或保持 _caffe 名称），正确链接 tvm-ffi、protobuf、BLAS（OpenBLAS），启用 C++17，不依赖 boost/glog/gflags
 - **FR-7**: 适配 Python 层（pycaffe.py）使用新的 tvm-ffi FFI 接口加载（通过 `tvm_ffi.load_module`），保持对上层用户（tests/、operators/）的 API 兼容
 - **FR-8**: 完全移除 glog、gflags、boost 的所有引用和链接依赖（包括 _caffe.cpp 中的 boost::python 相关代码）
@@ -261,7 +261,7 @@
 ## Acceptance Criteria
 
 ### AC-1: C++ 源码无 boost/glog/gflags 残留
-- **Given**: 瘦身完成后 `python/include/` 和 `python/src/`（含 FFI 导出层 _caffe.cpp）下的所有 C++ 源文件
+- **Given**: 瘦身完成后 `caffe-slim/include/` 和 `caffe-slim/src/`（含 FFI 导出层 _caffe.cpp）下的所有 C++ 源文件
 - **When**: 执行 grep 搜索 `#include <boost/`、`#include <glog/`、`#include <gflags/` 以及 `boost::`、`google::`、`gflags::`、`BOOST_PYTHON_MODULE`、`bp::` 符号
 - **Then**: 除 compat/ 兼容层（如有必要的映射别名）外，所有源文件不包含上述引用
 - **Verification**: `programmatic`
@@ -297,7 +297,7 @@
 - **Verification**: `programmatic`
 
 ### AC-7: 目录结构符合项目规范
-- **Given**: `python/` 目录结构
+- **Given**: `caffe-slim/` 目录结构
 - **When**: 检查文件布局
 - **Then**: include/caffe/ 存放头文件、src/caffe/ 存放源文件、include/caffe/compat/ 存放兼容层头文件、pycaffe/python/pycaffe/ 存放 Python 包（含重写后的 _caffe.cpp 或新的 ffi 导出文件）、CMakeLists.txt 在 python/ 根目录；现有 Python 目录（caffeproto/、operators/、protos/、scripts/、tests/）保留
 - **Verification**: `human-judgment`

@@ -32,4 +32,4 @@ print()
 
 echo "=== Test 2: LeNet forward pass with logging ==="
 cd /workspace
-python python/pycaffe/test_pycaffe.py 2>&1
+python caffe-slim/pycaffe/test_pycaffe.py 2>&1

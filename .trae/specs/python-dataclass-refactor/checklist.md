@@ -1,7 +1,7 @@
 # Python 目录 Dataclass 系统性重构 - Verification Checklist
 
 ## 基础数据类模块
-- [x] dataclasses.py 文件已创建在 python/pycaffe/python/pycaffe/ 目录
+- [x] dataclasses.py 文件已创建在 caffe-slim/pycaffe/python/pycaffe/ 目录
 - [x] TransformerConfig 已定义，包含所有必要字段（transpose, channel_swap, raw_scale, mean, input_scale）
 - [x] DataProcessorConfig 已定义，包含 input_blob 和 json_log 字段
 - [x] TimingStats 已定义，包含 cast_to_float32_ms, resize_ms, transforms_ms, contiguous_ms, transforms_total_ms 字段

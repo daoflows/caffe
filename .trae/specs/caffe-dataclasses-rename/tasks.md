@@ -7,7 +7,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: None
 - **Description**: 
-  - 将 `python/pycaffe/python/pycaffe/dataclasses.py` 物理重命名为 `python/pycaffe/python/pycaffe/data_types.py`
+  - 将 `caffe-slim/pycaffe/python/pycaffe/dataclasses.py` 物理重命名为 `caffe-slim/pycaffe/python/pycaffe/data_types.py`
   - 确认 data_types.py 内容与原 dataclasses.py 完全一致，无任何内容修改
 - **Acceptance Criteria Addressed**: [AC-1]
 - **Test Requirements**:
@@ -19,7 +19,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Task 1
 - **Description**: 
-  - 修改 `python/pycaffe/python/pycaffe/transforms.py`
+  - 修改 `caffe-slim/pycaffe/python/pycaffe/transforms.py`
   - 将第38行 `from .dataclasses import (` 改为 `from .data_types import (`
   - 确认 transforms.py 中第17行 `import dataclasses`（引用标准库）不需要修改
 - **Acceptance Criteria Addressed**: [AC-2, AC-3]
@@ -33,7 +33,7 @@ version: "1.0"
 - **Priority**: medium
 - **Depends On**: Task 1
 - **Description**: 
-  - 验证 `python/pycaffe/python/pycaffe/net_spec.py` 中第24行 `from dataclasses import dataclass` 是引用标准库
+  - 验证 `caffe-slim/pycaffe/python/pycaffe/net_spec.py` 中第24行 `from dataclasses import dataclass` 是引用标准库
   - 该引用不需要修改，重命名后不会有任何影响
 - **Acceptance Criteria Addressed**: [AC-3]
 - **Test Requirements**:
@@ -44,7 +44,7 @@ version: "1.0"
 - **Priority**: medium
 - **Depends On**: Task 1
 - **Description**: 
-  - 验证 `python/pycaffe/python/pycaffe/__init__.py` 中没有直接导入 dataclasses 模块
+  - 验证 `caffe-slim/pycaffe/python/pycaffe/__init__.py` 中没有直接导入 dataclasses 模块
   - __init__.py 只从 transforms 导入公开API，data_types是内部模块
 - **Acceptance Criteria Addressed**: [AC-2]
 - **Test Requirements**:
@@ -65,7 +65,7 @@ version: "1.0"
 - **Priority**: high
 - **Depends On**: Tasks 2-5
 - **Description**: 
-  - 在 `python/pycaffe/`、`python/scripts/`、`docker/` 目录下递归搜索
+  - 在 `caffe-slim/pycaffe/`、`caffe-slim/scripts/`、`docker/` 目录下递归搜索
   - 确认不再有任何对本地 `.dataclasses` 模块的引用（caffex/目录除外）
   - 注意区分：`import dataclasses`（标准库）是合法的，不需要替换；`from .dataclasses import`（本地模块）必须替换
 - **Acceptance Criteria Addressed**: [AC-2, AC-3, AC-5]

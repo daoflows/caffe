@@ -18,7 +18,7 @@ depth: standard
 | 任务类型 | 代码瘦身优化（第三方依赖替换+移除） |
 | 优化对象 | Caffe推理框架的glog、boost、gflags依赖 |
 | 替换方案 | 使用tvm-ffi库（智能指针/错误处理/线程同步/FFI绑定）替代glog+boost |
-| 目标路径 | `python/` |
+| 目标路径 | `caffe-slim/` |
 | 执行耗时 | 约2小时46分钟 |
 | Token消耗 | 约2986万 |
 | 核心产出 | 130个文件（74个.hpp + 55个.cpp），11310行C++代码 |
@@ -65,7 +65,7 @@ depth: standard
 |------|------|------|
 | 启动 | 读取AGENTS.md，遵循启动协议 | ✅ |
 | 规划 | 创建spec文档（PRD+任务清单+检查清单） | ✅ |
-| 目录结构 | 创建`python/include/`和`python/src/`目录骨架 | ✅ |
+| 目录结构 | 创建`caffe-slim/include/`和`caffe-slim/src/`目录骨架 | ✅ |
 | 核心迁移 | 迁移Blob/Net/Layer/SyncedMemory等核心抽象 | ✅ |
 | 兼容层 | 创建compat/目录（logging/smart_ptr/thread等） | ✅ |
 | 层迁移 | 迁移38个推理层实现 | ✅ |
@@ -260,7 +260,7 @@ depth: standard
 
 ## 快速导航
 
-- 目标产出物：`python/`
+- 目标产出物：`caffe-slim/`
 - FFI核心实现：[src/caffe/_caffe.cpp](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/src/caffe/_caffe.cpp)
 - 兼容层目录：[include/caffe/compat/](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/include/caffe/compat/)
 - Python封装：[python/caffe/__init__.py](file:///d:/spaces/SpecWeave/external/chaos/caffe/python/python/caffe/__init__.py)

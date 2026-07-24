@@ -8,7 +8,7 @@
 - [x] Task 2: 构建 python-module 独立 Dockerfile（主力模块）
   - [x] 创建 `docker/modules/python-module/Dockerfile`：多阶段构建（base-system → base-builder → builder → runtime）
   - [x] 复用现有 `docker/local/conda/Dockerfile` 中的 base-system、base-builder、builder 阶段逻辑
-  - [x] runtime 阶段：包含 Caffe 编译产物 + Python 绑定 + `python/` 目录（caffeproto/、operators/、protos/、scripts/、tests/）
+  - [x] runtime 阶段：包含 Caffe 编译产物 + Python 绑定 + `caffe-slim/` 目录（caffeproto/、operators/、protos/、scripts/、tests/）
   - [x] 创建 `docker/modules/python-module/scripts/verify-python-module.sh`：镜像验证脚本（含 caffe 导入、caffeproto 导入、run_test.sh 执行）
   - **验证**：在 WSL 中执行 `docker build -t caffe-cpu:python-module --target runtime -f docker/modules/python-module/Dockerfile .`，构建成功
 
@@ -28,7 +28,7 @@
 
 - [x] Task 5: 端到端验证
   - [x] 验证 python-module 镜像：启动容器，执行 `import caffe`、`from caffeproto import caffe_pb2`、`from operators.layers import L2Norm`
-  - [x] 验证 python-module 镜像：运行 `python/scripts/run_test.sh` 全部通过
+  - [x] 验证 python-module 镜像：运行 `caffe-slim/scripts/run_test.sh` 全部通过
   - [x] 验证 pycaffe 镜像：启动容器，执行 `import pycaffe`，验证 Net/TRAIN/TEST API
   - [x] 验证 pycaffe 镜像：运行 `verify-parity.sh`，确认测试结果与 caffex/python 测试对标一致
   - [x] 验证两个镜像的独立性和可移植性（互不依赖，可独立运行）

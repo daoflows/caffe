@@ -17,4 +17,4 @@ print('oversample:', o.shape)
 "
 echo "=== LeNet training test ==="
 cd /workspace
-python python/pycaffe/test_pycaffe.py
+python caffe-slim/pycaffe/test_pycaffe.py

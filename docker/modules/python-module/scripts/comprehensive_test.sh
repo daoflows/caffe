@@ -267,7 +267,7 @@ import sys
 paths = [p for p in sys.path if 'caffe' in p or 'workspace' in p]
 print('Caffe-related paths:', paths)
 assert '/workspace/caffex/python' in sys.path
-assert '/workspace/python' in sys.path
+assert '/workspace/caffe-slim' in sys.path
 print('OK')
 " 2>/dev/null && pass_test "PYTHONPATH configured correctly" || fail_test "PYTHONPATH" "Incorrect"
 

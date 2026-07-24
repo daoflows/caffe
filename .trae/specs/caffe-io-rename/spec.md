@@ -9,7 +9,7 @@ version: "1.0"
 - **Target Users**: PyCaffe 开发者和维护者、使用 PyCaffe 进行深度学习推理的应用开发者。
 
 ## Goals
-- 将 `python/pycaffe/python/pycaffe/io.py` 重命名为 `transforms.py`
+- 将 `caffe-slim/pycaffe/python/pycaffe/io.py` 重命名为 `transforms.py`
 - 更新 pycaffe 包内部所有文件的导入语句（`__init__.py`, `pycaffe.py`, `classifier.py`, `detector.py`）
 - 更新项目中引用 `pycaffe.io` 的测试脚本和工具脚本
 - 确保重命名后所有功能等价，不引入回归问题
@@ -37,7 +37,7 @@ version: "1.0"
 - **FR-3**: 更新 `pycaffe/pycaffe.py` 中的 `from . import io` 为 `from . import transforms`
 - **FR-4**: 更新 `pycaffe/classifier.py` 中的导入及所有 `io.xxx` 引用为 `transforms.xxx`
 - **FR-5**: 更新 `pycaffe/detector.py` 中的导入及所有 `io.xxx` 引用为 `transforms.xxx`
-- **FR-6**: 更新 `python/scripts/test_new_features.sh` 中 `pycaffe.io` 的引用为 `pycaffe.transforms`
+- **FR-6**: 更新 `caffe-slim/scripts/test_new_features.sh` 中 `pycaffe.io` 的引用为 `pycaffe.transforms`
 - **FR-7**: 更新 `docker/local/conda/runtest.sh` 中 `pycaffe.io` 的引用为 `pycaffe.transforms`
 - **FR-8**: 更新 `docker/local/conda/test_new_features.sh` 中 `pycaffe.io` 的引用为 `pycaffe.transforms`
 - **FR-9**: 更新 `docker/modules/pycaffe/scripts/verify-parity.sh` 中 `pycaffe.io` 的引用为 `pycaffe.transforms`

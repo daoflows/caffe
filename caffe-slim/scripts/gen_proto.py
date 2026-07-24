@@ -225,7 +225,7 @@ def verify_generated(out_dirs):
 
 def main():
     script_dir = Path(__file__).parent.resolve()
-    # proto 文件位于 python/protos/ 下
+    # proto 文件位于 scripts/ 的同级 protos/ 下
     proto_dir = str(script_dir.parent / "protos")
     # 输出到 caffeproto/ 和 protos/
     out_dirs = [

@@ -102,7 +102,7 @@ RUN set -eux; \\
     ldconfig
 
 # 复制 pycaffe 源码
-COPY python/pycaffe ${WORKSPACE_DIR}/pycaffe
+COPY caffe-slim/pycaffe ${WORKSPACE_DIR}/pycaffe
 
 # 设置权限
 RUN mkdir -p ${WORKSPACE_DIR}/pycaffe/dist && \\
@@ -203,9 +203,9 @@ RUN set -eux; \\
 
 # 从 pycaffe-builder-conda 复制 wheel 并安装
 COPY --from=pycaffe-builder-conda ${WORKSPACE_DIR}/pycaffe/dist ${WORKSPACE_DIR}/pycaffe/dist
-COPY python/pycaffe/verify.py ${WORKSPACE_DIR}/pycaffe/verify.py
-COPY python/pycaffe/test_inference.py ${WORKSPACE_DIR}/pycaffe/test_inference.py
-COPY python/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt
+COPY caffe-slim/pycaffe/verify.py ${WORKSPACE_DIR}/pycaffe/verify.py
+COPY caffe-slim/pycaffe/test_inference.py ${WORKSPACE_DIR}/pycaffe/test_inference.py
+COPY caffe-slim/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt
 
 # 安装 pycaffe wheel 并验证
 SHELL ["/bin/bash", "-c"]

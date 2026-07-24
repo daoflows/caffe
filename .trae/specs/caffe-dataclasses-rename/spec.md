@@ -4,7 +4,7 @@ version: "1.0"
 # PyCaffe dataclasses.py 模块重命名 - Product Requirement Document
 
 ## Overview
-- **Summary**: 将 `python/pycaffe/python/pycaffe/dataclasses.py` 重命名为 `data_types.py`，解决与Python标准库 `dataclasses`（Python 3.7+内置）的命名冲突问题。
+- **Summary**: 将 `caffe-slim/pycaffe/python/pycaffe/dataclasses.py` 重命名为 `data_types.py`，解决与Python标准库 `dataclasses`（Python 3.7+内置）的命名冲突问题。
 - **Purpose**: 模块名 `dataclasses` 与Python标准库同名，可能导致模块导入混淆、命名空间遮蔽风险，降低代码可维护性。重命名为 `data_types.py` 准确反映模块功能（定义数据处理相关的数据类型/配置/统计结构），且不与任何标准库或第三方库冲突。
 - **Target Users**: PyCaffe开发者和维护者
 

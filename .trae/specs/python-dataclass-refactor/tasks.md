@@ -1,6 +1,6 @@
 # Python 目录 Dataclass 系统性重构 - The Implementation Plan (Decomposed and Prioritized Task List)
 
-## [x] Task 1: 创建基础数据类定义（新文件：python/pycaffe/python/pycaffe/dataclasses.py）
+## [x] Task 1: 创建基础数据类定义（新文件：caffe-slim/pycaffe/python/pycaffe/dataclasses.py）
 - **Priority**: high
 - **Depends On**: None
 - **Description**: 
@@ -143,7 +143,7 @@
   - `programmatic` TR-7.4: `from caffeproto import caffe_fuse` 正常
   - `programmatic` TR-7.5: `from operators import layers` 正常
 
-## [x] Task 8: 编写单元测试（新文件：python/tests/test_dataclasses.py）
+## [x] Task 8: 编写单元测试（新文件：caffe-slim/tests/test_dataclasses.py）
 - **Priority**: high
 - **Depends On**: Task 1-7
 - **Description**: 
