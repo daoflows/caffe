@@ -1,0 +1,7 @@
+# Docker build cache
+.cache/
+*.tar
+*.log
+
+# Temporary build artifacts
+tmp/
