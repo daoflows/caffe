@@ -1,0 +1,390 @@
+# ==============================================================================
+# BVLC Caffe + Jupyter + SSH 多阶段 Dockerfile (CPU-only, Ubuntu 22.04 + System Python 3.10)
+#
+# 说明：基于 Caffe CPU-only 运行时镜像，叠加 SSH + Jupyter Notebook/Lab + supervisord。
+#       使用 Ubuntu 22.04 自带的 Python 3.10（不使用venv），非root用户为 caffe-origin (UID 1000)。
+#
+# 构建目标 (--target):
+#   base-system     公共基础层（apt换源、CA证书）
+#   base-builder    基础构建环境（系统构建依赖 + Python 依赖）
+#   builder         CI 构建阶段（编译 Caffe 源码）
+#   runtime-jupyter 完整运行时镜像（Caffe + SSH + Jupyter）
+#
+# 使用示例:
+#   docker build -t caffe-cpu:jupyter --target runtime-jupyter -f docker/origin/Dockerfile.jupyter-ssh .
+#   docker run -d -p 2222:22 -p 8888:8888 -v $(pwd)/workspace:/workspace \
+#     -e USER_PASSWORD=pass -e JUPYTER_TOKEN=mysecret caffe-cpu:jupyter
+# ==============================================================================
+
+# ==============================================================================
+# 阶段 0: base-system — 公共基础层（Ubuntu 22.04）
+# ==============================================================================
+FROM ubuntu:22.04 AS base-system
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN set -eux; \
+    sed -i 's@archive.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list; \
+    sed -i 's@security.ubuntu.com@mirrors.aliyun.com@g' /etc/apt/sources.list
+
+RUN set -eux; \
+    apt-get update -qq; \
+    apt-get install -y --no-install-recommends -qq \
+        ca-certificates \
+        curl \
+        libgomp1 \
+        procps \
+        tzdata \
+        wget \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# 阶段 1: base-builder — 构建工具链基础
+# 包含：编译工具链、Caffe 系统依赖、Python 3.10 + 科学计算包
+# ==============================================================================
+FROM base-system AS base-builder
+
+ARG BUILDER_USER=builder
+ARG BUILDER_UID=1000
+ARG BUILDER_GID=1000
+ARG WORKSPACE_DIR=/workspace
+
+LABEL stage=base-builder
+LABEL maintainer="Caffe Docker (Ubuntu 22.04)"
+LABEL description="BVLC Caffe CPU-only build environment"
+
+RUN set -eux; \
+    apt-get update -qq; \
+    apt-get install -y --no-install-recommends -qq \
+        bash-completion \
+        build-essential \
+        cmake \
+        gdb \
+        git \
+        less \
+        libatlas-base-dev \
+        libboost-all-dev \
+        libgflags-dev \
+        libgoogle-glog-dev \
+        libhdf5-dev \
+        libleveldb-dev \
+        liblmdb-dev \
+        libopencv-dev \
+        libprotobuf-dev \
+        libsnappy-dev \
+        pkg-config \
+        protobuf-compiler \
+        python3-dev \
+        python3-pip \
+        python3-setuptools \
+        python3-wheel \
+        sudo \
+        vim \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3 1; \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1; \
+    python --version; \
+    pip --version
+
+RUN set -eux; \
+    pip install --no-cache-dir --upgrade pip==24.0 setuptools==68.0.0 wheel
+
+RUN set -eux; \
+    pip install --no-cache-dir \
+        'numpy>=1.21,<2.0' \
+        'scipy>=1.7' \
+        'matplotlib>=3.5' \
+        'scikit-image>=0.19' \
+        'h5py>=3.6' \
+        'networkx>=2.6' \
+        'pandas>=1.4' \
+        'pyyaml>=6.0' \
+        'pillow>=9.0' \
+        'six>=1.16' \
+        'Cython>=0.29' \
+        'ipython>=8.0' \
+        'nose>=1.3' \
+        'python-dateutil>=2.8' \
+        'protobuf==3.20.3' \
+        'python-gflags>=3.1' \
+        'leveldb>=0.201'
+
+RUN set -eux; \
+    echo "=== Verifying Python packages ==="; \
+    python --version; \
+    python -c "import numpy; print('numpy:', numpy.__version__)"; \
+    python -c "import scipy; print('scipy:', scipy.__version__)"; \
+    python -c "import matplotlib; print('matplotlib:', matplotlib.__version__)"; \
+    python -c "import google.protobuf; print('protobuf:', google.protobuf.__version__)"; \
+    echo "All core packages imported successfully"
+
+ENV WORKSPACE_DIR=/workspace \
+    CC=gcc \
+    CXX=g++ \
+    CAFFE_ROOT=/workspace/caffex \
+    PATH=/workspace/caffex/build/tools:${PATH} \
+    LD_LIBRARY_PATH=/workspace/caffex/build/lib:/usr/lib:/usr/lib/x86_64-linux-gnu:/usr/local/lib \
+    PYTHONPATH=/workspace/caffex/python
+
+RUN set -eux; \
+    if ! getent group ${BUILDER_USER} >/dev/null; then \
+        if getent group ${BUILDER_GID} >/dev/null; then \
+            groupadd ${BUILDER_USER}; \
+        else \
+            groupadd -g ${BUILDER_GID} ${BUILDER_USER}; \
+        fi; \
+    fi; \
+    if id -u ${BUILDER_USER} >/dev/null 2>&1; then \
+        usermod -g ${BUILDER_USER} -s /bin/bash ${BUILDER_USER}; \
+    else \
+        if getent passwd ${BUILDER_UID} >/dev/null; then \
+            useradd -m -s /bin/bash -g ${BUILDER_USER} ${BUILDER_USER}; \
+        else \
+            useradd -m -s /bin/bash -u ${BUILDER_UID} -g ${BUILDER_GID} ${BUILDER_USER}; \
+        fi; \
+    fi; \
+    usermod -aG sudo ${BUILDER_USER}; \
+    echo "${BUILDER_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${BUILDER_USER}; \
+    chmod 0440 /etc/sudoers.d/90-${BUILDER_USER}; \
+    mkdir -p ${WORKSPACE_DIR}; \
+    chown -R ${BUILDER_UID}:${BUILDER_GID} ${WORKSPACE_DIR}
+
+USER ${BUILDER_USER}
+WORKDIR ${WORKSPACE_DIR}
+
+# ==============================================================================
+# 阶段 2: builder — CI 构建阶段（编译 Caffe 源码）
+# ==============================================================================
+FROM base-builder AS builder
+
+ARG CAFFE_VERSION=1.0
+
+LABEL stage=builder
+LABEL caffe.version=${CAFFE_VERSION}
+
+USER root
+
+COPY --chown=${BUILDER_USER}:${BUILDER_USER} caffex ${WORKSPACE_DIR}/caffex
+COPY docker/origin/scripts/generate-makefile-config.sh /usr/local/bin/generate-makefile-config.sh
+COPY docker/origin/scripts/verify-caffe.sh /usr/local/bin/verify-caffe.sh
+RUN chmod +x /usr/local/bin/generate-makefile-config.sh /usr/local/bin/verify-caffe.sh
+
+USER ${BUILDER_USER}
+WORKDIR ${WORKSPACE_DIR}/caffex
+
+RUN set -eux; \
+    echo "========================================"; \
+    echo "  Building BVLC Caffe (CPU-only)"; \
+    echo "========================================"; \
+    echo "Caffe Version: ${CAFFE_VERSION}"; \
+    echo ""; \
+    echo "=== Step 1: Generating Makefile.config ==="; \
+    generate-makefile-config.sh; \
+    echo ""; \
+    echo "=== Step 2: Compiling Caffe (CPU-only) ==="; \
+    make all -j$(nproc) 2>&1 | tail -30; \
+    echo ""; \
+    echo "=== Step 3: Compiling PyCaffe ==="; \
+    make pycaffe -j$(nproc) 2>&1 | tail -20; \
+    echo ""; \
+    echo "=== Step 4: Building tools ==="; \
+    make tools -j$(nproc) 2>&1 | tail -20; \
+    echo ""; \
+    echo "=== Step 5: Verifying build artifacts ==="; \
+    ls -lh build/lib/; \
+    ls -lh python/caffe/_caffe*.so; \
+    ls -lh build/tools/ 2>/dev/null || true; \
+    echo ""; \
+    echo "=== Step 6: Distribution ==="; \
+    make distribute 2>&1 | tail -10; \
+    echo ""; \
+    echo "========================================"; \
+    echo "  Build complete!"; \
+    echo "========================================"
+
+# ==============================================================================
+# 阶段 3: runtime-jupyter — Caffe + SSH + Jupyter 完整运行时镜像
+# 基于 base-builder（已包含所有系统库和 Python 依赖），复制编译产物并叠加SSH+Jupyter
+# ==============================================================================
+FROM base-builder AS runtime-jupyter
+
+ARG CAFFE_VERSION=1.0
+ARG NON_ROOT_USER=caffe-origin
+ARG NON_ROOT_UID=1000
+ARG NON_ROOT_GID=1000
+
+LABEL maintainer="Caffe Docker (Ubuntu 22.04)"
+LABEL description="BVLC Caffe CPU-only runtime with SSH + Jupyter"
+LABEL caffe.version=${CAFFE_VERSION}
+
+ENV TZ=Asia/Shanghai \
+    LANG=zh_CN.UTF-8 \
+    LANGUAGE=zh_CN:zh \
+    LC_ALL=zh_CN.UTF-8 \
+    NON_ROOT_USER=${NON_ROOT_USER} \
+    JUPYTER_PORT=8888 \
+    SSH_PORT=22 \
+    GRANT_SUDO=no \
+    ALLOW_ROOT_SSH=no \
+    JUPYTER_ALLOW_ORIGIN=
+
+USER root
+
+COPY --from=builder ${WORKSPACE_DIR}/caffex/build ${WORKSPACE_DIR}/caffex/build
+COPY --from=builder ${WORKSPACE_DIR}/caffex/python ${WORKSPACE_DIR}/caffex/python
+COPY --from=builder ${WORKSPACE_DIR}/caffex/distribute ${WORKSPACE_DIR}/caffex/distribute
+COPY --from=builder ${WORKSPACE_DIR}/caffex/Makefile.config ${WORKSPACE_DIR}/caffex/Makefile.config
+
+RUN set -eux; \
+    echo "[BUILD] Stage 1/7: Caffe build artifacts copied, setting up shared library symlinks..."; \
+    ln -sf /workspace/caffex/build/lib/libcaffe.so.1.0.0 /workspace/caffex/build/lib/libcaffe.so; \
+    ldconfig; \
+    echo "[BUILD] libcaffe.so symlink created, ldconfig done"
+
+RUN set -eux; \
+    echo "[BUILD] Stage 2/7: Installing runtime system packages + Chinese locale..."; \
+    apt-get update -qq; \
+    apt-get install -y --no-install-recommends -qq \
+        gosu \
+        locales \
+        openssh-server \
+        openssh-client \
+        supervisor \
+        tini \
+        pwgen \
+    ; \
+    echo "[BUILD] Generating zh_CN.UTF-8 locale..."; \
+    sed -i 's/^# *zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen; \
+    locale-gen zh_CN.UTF-8; \
+    update-locale LANG=zh_CN.UTF-8; \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime; \
+    echo "Asia/Shanghai" > /etc/timezone; \
+    echo "[BUILD] zh_CN locale + Asia/Shanghai timezone ready"; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    echo "[BUILD] Stage 3/7: Installing Jupyter Python packages..."; \
+    pip install --no-cache-dir \
+        notebook==7.2.2 \
+        jupyterlab==4.2.5 \
+        ipykernel==6.29.5 \
+        nbconvert==7.16.4 \
+        jupyter_server==2.14.1 \
+    ; \
+    echo "[BUILD] Jupyter packages installed:"; \
+    jupyter --version
+
+RUN set -eux; \
+    echo "[BUILD] Stage 4/7: Configuring user (renaming builder to ${NON_ROOT_USER})..."; \
+    OLD_USER=builder; \
+    if id -u ${OLD_USER} >/dev/null 2>&1; then \
+        pkill -u ${OLD_USER} 2>/dev/null || true; \
+        sleep 1; \
+        usermod -l ${NON_ROOT_USER} ${OLD_USER}; \
+        groupmod -n ${NON_ROOT_USER} ${OLD_USER}; \
+        usermod -d /home/${NON_ROOT_USER} -m ${NON_ROOT_USER}; \
+        usermod -u ${NON_ROOT_UID} ${NON_ROOT_USER}; \
+        groupmod -g ${NON_ROOT_GID} ${NON_ROOT_USER}; \
+        if [ -f /etc/sudoers.d/90-${OLD_USER} ]; then \
+            mv /etc/sudoers.d/90-${OLD_USER} /etc/sudoers.d/90-${NON_ROOT_USER}; \
+        fi; \
+        echo "${NON_ROOT_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${NON_ROOT_USER}; \
+        chmod 0440 /etc/sudoers.d/90-${NON_ROOT_USER}; \
+        echo "[BUILD] User ${OLD_USER} renamed to ${NON_ROOT_USER} (UID=${NON_ROOT_UID}, GID=${NON_ROOT_GID})"; \
+    else \
+        groupadd -g ${NON_ROOT_GID} ${NON_ROOT_USER}; \
+        useradd -m -s /bin/bash -u ${NON_ROOT_UID} -g ${NON_ROOT_GID} -G sudo ${NON_ROOT_USER}; \
+        echo "${NON_ROOT_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${NON_ROOT_USER}; \
+        chmod 0440 /etc/sudoers.d/90-${NON_ROOT_USER}; \
+        echo "[BUILD] Created new user ${NON_ROOT_USER} (UID=${NON_ROOT_UID}, GID=${NON_ROOT_GID})"; \
+    fi; \
+    mkdir -p /run/sshd /var/log/supervisor /etc/supervisor/conf.d /workspace \
+        /home/${NON_ROOT_USER}/.jupyter /home/${NON_ROOT_USER}/.ssh; \
+    chmod 755 /run/sshd /workspace; \
+    chmod 700 /home/${NON_ROOT_USER}/.ssh; \
+    chown -R ${NON_ROOT_UID}:${NON_ROOT_GID} /workspace /home/${NON_ROOT_USER}/.jupyter /home/${NON_ROOT_USER}/.ssh; \
+    echo "[BUILD] Runtime directories created with proper permissions"
+
+COPY docker/origin/config/sshd_config /etc/ssh/sshd_config
+COPY docker/origin/config/supervisord.conf /etc/supervisor/supervisord.conf
+COPY docker/origin/config/supervisor/conf.d/ /etc/supervisor/conf.d/
+COPY docker/origin/config/jupyter_notebook_config.py /home/${NON_ROOT_USER}/.jupyter/jupyter_notebook_config.py
+COPY docker/origin/config/profile.d/caffe.sh /etc/profile.d/caffe.sh
+COPY docker/origin/entrypoint-jupyter.sh /usr/local/bin/entrypoint-jupyter.sh
+COPY docker/origin/scripts/healthcheck-jupyter.sh /usr/local/bin/healthcheck-jupyter.sh
+COPY docker/origin/scripts/verify-caffe.sh /usr/local/bin/verify-caffe.sh
+
+RUN set -eux; \
+    echo "[BUILD] Stage 5/7: Installing configuration files and scripts..."; \
+    chmod +x /usr/local/bin/entrypoint-jupyter.sh /usr/local/bin/healthcheck-jupyter.sh /usr/local/bin/verify-caffe.sh; \
+    chown -R ${NON_ROOT_USER}:${NON_ROOT_USER} /home/${NON_ROOT_USER}/.jupyter; \
+    chmod 644 /etc/profile.d/caffe.sh; \
+    echo "[BUILD] Adding caffe.sh to /etc/bash.bashrc for non-login shells..."; \
+    echo '. /etc/profile.d/caffe.sh' >> /etc/bash.bashrc; \
+    echo "[BUILD] Scripts made executable, config permissions set, caffe.sh environment configured for all shells"
+
+RUN set -eux; \
+    echo "[BUILD] Stage 6/7: Generating SSH host keys and verifying configs..."; \
+    ssh-keygen -A >/dev/null 2>&1; \
+    echo "[BUILD] SSH host keys generated"; \
+    sshd -t && echo "[BUILD] sshd_config syntax: OK"; \
+    echo "[BUILD] Updating supervisor config user references..."; \
+    sed -i "s/jupyteruser/${NON_ROOT_USER}/g" /etc/supervisor/conf.d/jupyter.conf; \
+    if grep -q "/opt/venv" /etc/supervisor/conf.d/jupyter.conf 2>/dev/null; then \
+        sed -i "s|/opt/venv/bin:||g" /etc/supervisor/conf.d/jupyter.conf; \
+        sed -i "s|VIRTUAL_ENV=\"/opt/venv\",||g" /etc/supervisor/conf.d/jupyter.conf; \
+    fi; \
+    echo "[BUILD] Supervisor config updated for ${NON_ROOT_USER} user"
+
+RUN set -eux; \
+    echo "[BUILD] Stage 7/7: Verifying Caffe and writing build info..."; \
+    echo "  Running Caffe verification..."; \
+    verify-caffe.sh; \
+    echo ""; \
+    echo "  Writing build info to /etc/caffe-jupyter-build-info..."; \
+    echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /etc/caffe-jupyter-build-info; \
+    echo "BASE_IMAGE=ubuntu:22.04" >> /etc/caffe-jupyter-build-info; \
+    echo "BUILD_TYPE=multi-stage" >> /etc/caffe-jupyter-build-info; \
+    echo "CAFFE_VERSION=${CAFFE_VERSION}" >> /etc/caffe-jupyter-build-info; \
+    echo "LOCALE=zh_CN.UTF-8" >> /etc/caffe-jupyter-build-info; \
+    echo "TIMEZONE=Asia/Shanghai" >> /etc/caffe-jupyter-build-info; \
+    echo "NON_ROOT_USER=${NON_ROOT_USER}" >> /etc/caffe-jupyter-build-info; \
+    echo "NON_ROOT_UID=${NON_ROOT_UID}" >> /etc/caffe-jupyter-build-info; \
+    echo "SERVICES=sshd,jupyter" >> /etc/caffe-jupyter-build-info; \
+    echo "SUPERVISOR=enabled" >> /etc/caffe-jupyter-build-info; \
+    echo "PYTHON_ENV=system-python3.10" >> /etc/caffe-jupyter-build-info; \
+    cat /etc/caffe-jupyter-build-info; \
+    echo ""; \
+    echo "  Final verification..."; \
+    sshd -t && echo "[OK] sshd config valid"; \
+    supervisord --version && echo "[OK] supervisord available"; \
+    gosu --version && echo "[OK] gosu available"; \
+    tini --version && echo "[OK] tini available"; \
+    python --version && echo "[OK] python available"; \
+    pip --version && echo "[OK] pip available"; \
+    jupyter --version && echo "[OK] jupyter available"; \
+    bash -n /usr/local/bin/entrypoint-jupyter.sh && echo "[OK] entrypoint-jupyter.sh syntax valid"; \
+    bash -n /usr/local/bin/healthcheck-jupyter.sh && echo "[OK] healthcheck-jupyter.sh syntax valid"; \
+    echo ""; \
+    echo "[BUILD] ========== BUILD COMPLETE =========="; \
+    echo ""
+
+WORKDIR /workspace
+VOLUME ["/workspace"]
+EXPOSE 22 8888
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD /usr/local/bin/healthcheck-jupyter.sh
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint-jupyter.sh"]
+CMD []
