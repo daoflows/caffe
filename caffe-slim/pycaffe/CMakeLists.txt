@@ -13,7 +13,7 @@
 #   cmake --build . -j
 
 cmake_minimum_required(VERSION 3.18)
-project(pycaffe VERSION 1.0.0-slim LANGUAGES CXX C)
+project(pycaffe VERSION 1.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,7 +21,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(NOT CAFFE_VERSION)
-  set(CAFFE_VERSION "1.0.0-slim")
+  set(CAFFE_VERSION "1.0.0")
 endif()
 
 set(TVM_FFI_USE_LIBBACKTRACE OFF CACHE BOOL "Disable libbacktrace" FORCE)
