@@ -233,13 +233,34 @@ print_access_info() {
 
 print_banner
 
+# Source profile scripts to ensure correct environment (LD_LIBRARY_PATH, etc.)
+if [ -f /etc/profile.d/pycaffe.sh ]; then
+    . /etc/profile.d/pycaffe.sh
+fi
+if [ -d /etc/profile.d ]; then
+    for f in /etc/profile.d/*.sh; do
+        if [ -f "$f" ] && [ "$f" != "/etc/profile.d/pycaffe.sh" ]; then
+            . "$f" 2>/dev/null || true
+        fi
+    done
+fi
+
 if [ $# -gt 0 ]; then
     log_info "Command mode detected: '$*' - skipping service startup, exec user command directly"
     diagnose_system
     setup_passwords
-    log_info "Entering user command (tini as init, signals forwarded)..."
+    log_info "Entering user command (tini as init, gosu privilege drop to ${NON_ROOT_USER:-builder})..."
     echo ""
-    exec "$@"
+    if [ "$(id -u)" = "0" ]; then
+        target_user="${NON_ROOT_USER:-builder}"
+        export HOME="/home/${target_user}"
+        export USER="${target_user}"
+        export LOGNAME="${target_user}"
+        cd /workspace
+        exec gosu "${target_user}" "$@"
+    else
+        exec "$@"
+    fi
 fi
 
 diagnose_system

@@ -45,7 +45,8 @@ RUN set -eux; \
     echo "deb http://mirrors.aliyun.com/ubuntu/ resolute-security main restricted universe multiverse" >> /etc/apt/sources.list
 
 # 基础工具
-RUN apt-get update && \
+RUN set -eux; \
+    apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -54,7 +55,8 @@ RUN apt-get update && \
         tzdata \
         wget \
     && apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+    echo "Base system ready (Ubuntu 26.04 + Chinese locale + timezone)"
 
 # ==============================================================================
 # 阶段 1: base-builder — 构建工具链 + Python 科学计算包
@@ -123,10 +125,9 @@ RUN python -c "import numpy; print('numpy:', numpy.__version__)" && \
     python -c "import google.protobuf; print('protobuf:', google.protobuf.__version__)" && \
     echo "All core packages imported successfully"
 
-# 环境变量（路径匹配 /workspace/caffe/caffe-slim/ 结构）
+# 环境变量
 ENV WORKSPACE_DIR=/workspace \
-    LD_LIBRARY_PATH=/workspace/caffe/caffe-slim/pycaffe/python/pycaffe:/usr/lib:/usr/lib/x86_64-linux-gnu:/usr/local/lib \
-    PYTHONPATH=/workspace/caffe/caffe-slim
+    LD_LIBRARY_PATH=/usr/local/lib:/usr/lib:/usr/lib/x86_64-linux-gnu
 
 # 创建 builder 用户
 RUN set -eux; \
@@ -240,6 +241,14 @@ COPY caffe/docker/standalone/pycaffe/scripts/verify-pycaffe.sh /usr/local/bin/ve
 COPY caffe/docker/standalone/pycaffe/scripts/verify-parity.sh /usr/local/bin/verify-parity.sh
 RUN chmod +x /usr/local/bin/verify-pycaffe.sh /usr/local/bin/verify-parity.sh
 
+# 创建验证用的工作目录和 LeNet prototxt
+RUN set -eux; \
+    mkdir -p ${WORKSPACE_DIR}/pycaffe; \
+    echo "Verification workspace ready at ${WORKSPACE_DIR}/pycaffe"
+
+# 复制 LeNet prototxt（verify-pycaffe.sh 需要）
+COPY --from=pycaffe-builder ${WORKSPACE_DIR}/caffe/caffe-slim/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt
+
 # 设置环境变量：使用纯 Python protobuf 实现
 ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
 
@@ -260,33 +269,42 @@ RUN set -eux; \
     ldconfig; \
     echo "ldconfig updated"
 
-# 设置 LD_LIBRARY_PATH 包含 pycaffe 目录
-ENV LD_LIBRARY_PATH=/usr/local/lib/python3.14/dist-packages/pycaffe:/usr/lib:/usr/lib/x86_64-linux-gnu:/usr/local/lib
+# 写入 profile.d 环境脚本（所有 shell 都能加载正确的 LD_LIBRARY_PATH，不硬编码 Python 版本）
+RUN set -eux; \
+    PYCAFFE_DIR=$(python -c "import site, os; print(os.path.join(site.getsitepackages()[0], 'pycaffe'))"); \
+    echo "Detected pycaffe dir: $PYCAFFE_DIR"; \
+    printf 'export LD_LIBRARY_PATH=%s:/usr/local/lib:/usr/lib:/usr/lib/x86_64-linux-gnu\n' "$PYCAFFE_DIR" > /etc/profile.d/pycaffe.sh; \
+    chmod 644 /etc/profile.d/pycaffe.sh; \
+    echo '. /etc/profile.d/pycaffe.sh' >> /etc/bash.bashrc; \
+    echo "[BUILD] pycaffe.sh profile script installed for all shells"
 
 # 验证 pycaffe 安装（非致命 - 上游 tvm-ffi 接口适配问题不阻断镜像构建）
 RUN set -eux; \
     echo "=== [Runtime] Verifying pycaffe installation ==="; \
-    echo "Checking .so files:"; \
-    ls -la /usr/local/lib/python3.14/dist-packages/pycaffe/*.so 2>/dev/null || echo "Warning: .so files check"; \
+    PYCAFFE_DIR=$(python -c "import site, os; print(os.path.join(site.getsitepackages()[0], 'pycaffe'))"); \
+    echo "Checking .so files in $PYCAFFE_DIR:"; \
+    ls -la "$PYCAFFE_DIR/"*.so 2>/dev/null || echo "Warning: .so files check"; \
     echo ""; \
-    echo "Attempting pycaffe import (may fail due to upstream tvm-ffi/Python 3.14 compatibility):"; \
-    python -c "import pycaffe; print('pycaffe version:', pycaffe.__version__)" 2>&1 || echo "Warning: pycaffe import failed - this is a known upstream issue with tvm-ffi slim interface on Python 3.14"; \
+    echo "Python version: $(python --version)"; \
+    echo "Attempting pycaffe import (may fail due to upstream tvm-ffi slim interface compatibility):"; \
+    python -c "import pycaffe; print('pycaffe version:', pycaffe.__version__)" 2>&1 || echo "Warning: pycaffe import failed - this is a known upstream issue with tvm-ffi slim interface"; \
     echo ""; \
     echo "=== [Runtime] pycaffe wheel installed successfully ==="
 
 # -----------------------------------------------------------------------------
 # Stage runtime.1: 安装 SSH + Jupyter 运行时系统包 + 中文 locale
 # -----------------------------------------------------------------------------
-RUN echo "=== Stage 1/6: Installing SSH+Jupyter runtime packages + Chinese locale ===" && \
+RUN echo "=== Stage 1/7: Installing SSH+Jupyter runtime packages + Chinese locale ===" && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+        gosu \
         locales \
         openssh-server \
         openssh-client \
         pwgen \
         supervisor \
         tini \
-    && echo "[BUILD] Runtime packages installed" && \
+    && echo "[BUILD] Runtime packages installed (gosu included for privilege dropping)" && \
     echo "[BUILD] Generating zh_CN.UTF-8 locale..." && \
     sed -i 's/^# *zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/' /etc/locale.gen && \
     locale-gen zh_CN.UTF-8 && \
@@ -374,6 +392,8 @@ RUN echo "=== Stage 6/6: Final configuration and verification ===" && \
     echo "[BUILD] Running final verification..." && \
     sshd -t && echo "[OK] sshd config valid" && \
     supervisord --version && echo "[OK] supervisord available" && \
+    gosu --version && echo "[OK] gosu available (privilege dropping)" && \
+    tini --version && echo "[OK] tini available" && \
     python --version && echo "[OK] python available" && \
     pip --version && echo "[OK] pip available" && \
     jupyter --version && echo "[OK] jupyter available" && \
@@ -381,6 +401,8 @@ RUN echo "=== Stage 6/6: Final configuration and verification ===" && \
     bash -n /usr/local/bin/entrypoint.sh && echo "[OK] entrypoint.sh syntax valid" && \
     bash -n /usr/local/bin/healthcheck.sh && echo "[OK] healthcheck.sh syntax valid" && \
     bash -n /usr/local/bin/verify-pycaffe.sh && echo "[OK] verify-pycaffe.sh syntax valid" && \
+    bash -n /usr/local/bin/verify-parity.sh && echo "[OK] verify-parity.sh syntax valid" && \
+    id builder && echo "[OK] builder user exists (UID=$(id -u builder))" && \
     echo "" && \
     echo "[BUILD] ========== BUILD COMPLETE ==========" && \
     echo ""
