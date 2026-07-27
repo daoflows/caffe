@@ -17,7 +17,8 @@
 
 import logging
 import numpy as np
-from utils import L, _test_op
+import pytest
+from utils import L, _test_op, assert_op_correct
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ def _test_relu(data, test_dir, **kwargs):
     """One iteration of ReLU."""
     logger.info(f"Testing ReLU, input shape: {data.shape}")
     logger.debug(f"ReLU params: {kwargs}")
-    _test_op(data, L.ReLU, "ReLU", test_dir, **kwargs)
+    return _test_op(data, L.ReLU, "ReLU", test_dir, **kwargs)
 
 
 def test_forward_ReLU(caffe_test_dir):
@@ -38,3 +39,41 @@ def test_forward_ReLU(caffe_test_dir):
     data2 = np.random.rand(10, 20).astype(np.float32)
     logger.debug(f"Calling _test_relu with 2D data shape {data2.shape}")
     _test_relu(data2, caffe_test_dir)
+
+
+@pytest.mark.correctness
+def test_relu_correctness(caffe_test_dir):
+    """ReLU correctness test with random data."""
+    logger.info("Running test_relu_correctness")
+    np.random.seed(42)
+    shapes = [
+        (1, 3, 10, 10),
+        (10, 20),
+        (3, 10, 10),
+        (100,),
+    ]
+    for shape in shapes:
+        x = np.random.randn(*shape).astype(np.float32)
+        ref = np.maximum(x, 0)
+        caffe_out = _test_relu(x, caffe_test_dir)
+        assert_op_correct(caffe_out, ref, op_name="ReLU")
+
+
+@pytest.mark.edge
+def test_relu_edge_cases(caffe_test_dir):
+    """ReLU edge cases."""
+    logger.info("Running test_relu_edge_cases")
+    test_cases = [
+        ("zeros", np.zeros((1, 3, 8, 8), dtype=np.float32)),
+        ("all_negative", np.full((1, 3, 8, 8), -5.0, dtype=np.float32)),
+        ("all_positive", np.full((1, 3, 8, 8), 5.0, dtype=np.float32)),
+        ("large_values_pos", np.full((1, 3, 8, 8), 1e4, dtype=np.float32)),
+        ("large_values_neg", np.full((1, 3, 8, 8), -1e4, dtype=np.float32)),
+        ("small_values_pos", np.full((1, 3, 8, 8), 1e-6, dtype=np.float32)),
+        ("small_values_neg", np.full((1, 3, 8, 8), -1e-6, dtype=np.float32)),
+    ]
+    for name, x in test_cases:
+        logger.debug(f"Testing ReLU edge case: {name}")
+        ref = np.maximum(x, 0)
+        caffe_out = _test_relu(x, caffe_test_dir)
+        assert_op_correct(caffe_out, ref, op_name=f"ReLU({name})")

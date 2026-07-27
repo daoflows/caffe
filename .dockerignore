@@ -12,8 +12,6 @@ caffex/.github
 caffex/.Doxyfile
 caffex/caffe.cloc
 caffex/CONTRIBUTORS.md
-caffex/CONTRIBUTING.md
-caffex/Makefile
 caffex/Makefile.config.example
 tests/coverage
 tests/__pycache__
@@ -21,7 +19,12 @@ tests/.pytest_cache
 tests/ops/__pycache__
 tests/ops/.pytest_cache
 tests/ops/htmlcov
-docker
+docker/**
+!docker/origin/
+!docker/origin/scripts/
+docker/origin/.agents
+docker/origin/config
+docker/origin/templates
 .git
 .gitignore
 tools

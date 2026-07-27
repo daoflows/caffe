@@ -16,12 +16,16 @@
 # under the License.
 
 import os
+import time
 import logging
+import tracemalloc
 import numpy as np
 from google.protobuf import text_format
 import caffe
 from caffe import layers as L, params as P
 from caffe.proto import caffe_pb2 as pb
+
+np.random.seed(42)
 
 os.environ["GLOG_minloglevel"] = "2"
 
@@ -50,6 +54,22 @@ def _list_to_str(ll):
     return res
 
 
+def _dict_to_str(d):
+    """Convert a dict to a filename-safe string."""
+    items = []
+    for k in sorted(d.keys()):
+        v = d[k]
+        if isinstance(v, dict):
+            items.append(f"{k}-{_dict_to_str(v)}")
+        elif isinstance(v, (list, tuple)):
+            items.append(f"{k}-{_list_to_str(v)}")
+        elif isinstance(v, bool):
+            items.append(f"{k}-{1 if v else 0}")
+        else:
+            items.append(f"{k}-{v}")
+    return "_".join(items)
+
+
 def _gen_filename_str(op_name, data_shape, base_dir, *args, **kwargs):
     """Combining the filename according to the op_name, shape and other args."""
     file_dir = os.path.join(base_dir, op_name)
@@ -62,11 +82,17 @@ def _gen_filename_str(op_name, data_shape, base_dir, *args, **kwargs):
             res += "_" + _list_to_str(arg)
         elif isinstance(arg, (int, float, str)):
             res += "_" + str(arg)
-    for _, v in kwargs.items():
+        elif isinstance(arg, dict):
+            res += "_" + _dict_to_str(arg)
+    for k, v in kwargs.items():
         if isinstance(v, (tuple, list)):
-            res += "_" + _list_to_str(v)
+            res += "_" + k + "-" + _list_to_str(v)
         elif isinstance(v, (int, float, str)):
-            res += "_" + str(v)
+            res += "_" + k + "-" + str(v)
+        elif isinstance(v, bool):
+            res += "_" + k + "-" + ("1" if v else "0")
+        elif isinstance(v, dict):
+            res += "_" + k + "-" + _dict_to_str(v)
     res = res.replace(".", "_")
     res = res.replace("-", "_")
     proto_file = os.path.join(file_dir, res + ".prototxt")
@@ -218,3 +244,243 @@ def _test_op(data, func_op, op_name, test_dir, **kwargs):
     except Exception as e:
         logger.error(f"Error testing operator {op_name}: {e}", exc_info=True)
         raise
+
+
+def assert_op_correct(caffe_out, ref_out, atol=1e-5, rtol=1e-4, op_name=""):
+    """
+    Compare Caffe output with numpy reference implementation using np.allclose.
+    
+    Args:
+        caffe_out: Caffe operator output (numpy array or list of arrays)
+        ref_out: Numpy reference output (numpy array or list of arrays)
+        atol: Absolute tolerance for np.allclose
+        rtol: Relative tolerance for np.allclose
+        op_name: Operator name for error messages
+    
+    Raises:
+        AssertionError: If outputs don't match within tolerance, showing max error
+    """
+    logger.debug(f"Verifying correctness for op: {op_name or 'unknown'}, atol={atol}, rtol={rtol}")
+    
+    def _compare_single(a, b):
+        a_np = np.asarray(a)
+        b_np = np.asarray(b)
+        if a_np.shape != b_np.shape:
+            raise AssertionError(
+                f"Shape mismatch for {op_name or 'op'}: "
+                f"caffe_out shape {a_np.shape} vs ref_out shape {b_np.shape}"
+            )
+        close_mask = np.isclose(a_np, b_np, atol=atol, rtol=rtol)
+        if not np.all(close_mask):
+            max_abs_err = np.max(np.abs(a_np - b_np))
+            max_rel_err = np.max(np.abs(a_np - b_np) / (np.abs(b_np) + 1e-10))
+            err_idx = np.unravel_index(np.argmax(np.abs(a_np - b_np)), a_np.shape)
+            raise AssertionError(
+                f"Output mismatch for {op_name or 'op'}: "
+                f"max absolute error = {max_abs_err:.2e}, "
+                f"max relative error = {max_rel_err:.2e}, "
+                f"atol={atol}, rtol={rtol}, "
+                f"error location (flattened index argmax): {err_idx}, "
+                f"caffe value = {a_np[err_idx]}, ref value = {b_np[err_idx]}"
+            )
+        return True
+    
+    if isinstance(caffe_out, (list, tuple)) and isinstance(ref_out, (list, tuple)):
+        if len(caffe_out) != len(ref_out):
+            raise AssertionError(
+                f"Output count mismatch for {op_name or 'op'}: "
+                f"{len(caffe_out)} vs {len(ref_out)}"
+            )
+        for i, (c, r) in enumerate(zip(caffe_out, ref_out)):
+            _compare_single(c, r)
+    elif isinstance(caffe_out, (list, tuple)) and len(caffe_out) == 1 and not isinstance(ref_out, (list, tuple)):
+        _compare_single(caffe_out[0], ref_out)
+    else:
+        _compare_single(caffe_out, ref_out)
+    
+    logger.info(f"Correctness check passed for {op_name or 'op'}")
+
+
+class Timer:
+    """
+    Context manager for performance timing.
+    
+    Usage:
+        with Timer() as t:
+            # code to time
+        print(f"Elapsed: {t.elapsed} seconds")
+    """
+    
+    def __init__(self, name=""):
+        self.name = name
+        self.elapsed = 0.0
+        self._start = None
+    
+    def __enter__(self):
+        self._start = time.perf_counter()
+        return self
+    
+    def __exit__(self, *args):
+        self.elapsed = time.perf_counter() - self._start
+        if self.name:
+            logger.debug(f"Timer [{self.name}] elapsed: {self.elapsed:.6f}s")
+
+
+def get_memory_usage():
+    """
+    Get current memory usage in bytes using tracemalloc.
+    
+    Returns:
+        tuple: (current_memory, peak_memory) in bytes
+    """
+    if not tracemalloc.is_tracing():
+        tracemalloc.start()
+    current, peak = tracemalloc.get_traced_memory()
+    return current, peak
+
+
+def check_memory_leak(func, runs=5, *args, **kwargs):
+    """
+    Check for memory leaks by running a function multiple times and tracking memory growth.
+    
+    Args:
+        func: Callable to test
+        runs: Number of consecutive runs
+        *args: Positional arguments for func
+        **kwargs: Keyword arguments for func
+    
+    Returns:
+        dict: Memory usage statistics with keys:
+            - 'memory_per_run': List of memory usage (bytes) after each run
+            - 'has_leak': Boolean indicating if continuous growth detected
+            - 'growth_rate': Average bytes increase per run
+            - 'peak_memory': Peak memory usage across all runs
+    
+    Raises:
+        RuntimeError: If significant memory leak is detected
+    """
+    logger.debug(f"Checking memory leak for {func.__name__} with {runs} runs")
+    
+    was_tracing = tracemalloc.is_tracing()
+    if not was_tracing:
+        tracemalloc.start()
+    
+    tracemalloc.reset_peak()
+    memory_per_run = []
+    
+    for i in range(runs):
+        func(*args, **kwargs)
+        current, _ = tracemalloc.get_traced_memory()
+        memory_per_run.append(current)
+    
+    _, peak = tracemalloc.get_traced_memory()
+    
+    if len(memory_per_run) >= 3:
+        first_half = memory_per_run[:runs//2]
+        second_half = memory_per_run[runs//2:]
+        avg_first = sum(first_half) / len(first_half)
+        avg_second = sum(second_half) / len(second_half)
+        growth = avg_second - avg_first
+        growth_rate = growth / (runs // 2)
+        has_leak = growth_rate > 1024 * 100
+    else:
+        growth = memory_per_run[-1] - memory_per_run[0]
+        growth_rate = growth / max(runs - 1, 1)
+        has_leak = growth_rate > 1024 * 100
+    
+    if not was_tracing:
+        tracemalloc.stop()
+    
+    result = {
+        'memory_per_run': memory_per_run,
+        'has_leak': has_leak,
+        'growth_rate': growth_rate,
+        'peak_memory': peak,
+    }
+    
+    if has_leak:
+        logger.warning(
+            f"Potential memory leak detected in {func.__name__}: "
+            f"avg growth = {growth_rate:.2f} bytes/run over {runs} runs"
+        )
+    else:
+        logger.debug(
+            f"No memory leak detected in {func.__name__}: "
+            f"avg growth = {growth_rate:.2f} bytes/run"
+        )
+    
+    return result
+
+
+class TestResultCollector:
+    """
+    Collector for test results including correctness, performance, and memory tests.
+    """
+    
+    def __init__(self):
+        self.results = {
+            'correctness': [],
+            'performance': [],
+            'memory': [],
+        }
+    
+    def add_result(self, category, name, passed, details=None):
+        """
+        Add a test result.
+        
+        Args:
+            category: One of 'correctness', 'performance', 'memory'
+            name: Test/operator name
+            passed: Boolean indicating if test passed
+            details: Optional dict with additional details (e.g., elapsed time, error)
+        """
+        if category not in self.results:
+            raise ValueError(f"Unknown category: {category}. Must be one of {list(self.results.keys())}")
+        
+        result = {
+            'name': name,
+            'passed': passed,
+            'details': details or {},
+        }
+        self.results[category].append(result)
+        logger.debug(f"Added {category} result for {name}: passed={passed}")
+    
+    def get_summary(self):
+        """
+        Get a summary of all test results.
+        
+        Returns:
+            dict: Summary with counts per category and overall pass/fail status
+        """
+        summary = {}
+        total_passed = 0
+        total_tests = 0
+        
+        for category, results in self.results.items():
+            passed = sum(1 for r in results if r['passed'])
+            total = len(results)
+            summary[category] = {
+                'total': total,
+                'passed': passed,
+                'failed': total - passed,
+                'pass_rate': passed / total if total > 0 else 0.0,
+                'results': results,
+            }
+            total_passed += passed
+            total_tests += total
+        
+        summary['overall'] = {
+            'total': total_tests,
+            'passed': total_passed,
+            'failed': total_tests - total_passed,
+            'pass_rate': total_passed / total_tests if total_tests > 0 else 0.0,
+            'all_passed': total_passed == total_tests,
+        }
+        
+        logger.info(
+            f"Test summary - total: {total_tests}, passed: {total_passed}, "
+            f"failed: {total_tests - total_passed}, "
+            f"pass rate: {summary['overall']['pass_rate']:.1%}"
+        )
+        
+        return summary

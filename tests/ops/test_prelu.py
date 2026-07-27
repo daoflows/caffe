@@ -17,16 +17,30 @@
 
 import logging
 import numpy as np
-from utils import L, _test_op
+import pytest
+from utils import L, _test_op, assert_op_correct
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PRELU_SLOPE = 0.25
+
+
+def _prelu_ref(x, slope=DEFAULT_PRELU_SLOPE):
+    return np.where(x >= 0, x, slope * x)
+
+
+def _get_slope_from_kwargs(kwargs):
+    filler = kwargs.get("filler", None)
+    if filler is not None and filler.get("type") == "constant":
+        return filler.get("value", DEFAULT_PRELU_SLOPE)
+    return DEFAULT_PRELU_SLOPE
 
 
 def _test_prelu(data, test_dir, **kwargs):
     """One iteration of PReLU."""
     logger.info(f"Testing PReLU, input shape: {data.shape}")
     logger.debug(f"PReLU params: {kwargs}")
-    _test_op(data, L.PReLU, "PReLU", test_dir, **kwargs)
+    return _test_op(data, L.PReLU, "PReLU", test_dir, **kwargs)
 
 
 def test_forward_PReLU(caffe_test_dir):
@@ -40,3 +54,43 @@ def test_forward_PReLU(caffe_test_dir):
     data2 = np.random.rand(10, 20).astype(np.float32)
     logger.debug(f"Testing PReLU 2D input, shape: {data2.shape}")
     _test_prelu(data2, caffe_test_dir)
+
+
+@pytest.mark.correctness
+def test_prelu_correctness(caffe_test_dir):
+    """PReLU correctness test with random data."""
+    logger.info("Running test_prelu_correctness")
+    np.random.seed(42)
+    shapes = [
+        (1, 3, 10, 10),
+        (10, 20),
+    ]
+    for shape in shapes:
+        x = np.random.randn(*shape).astype(np.float32)
+        logger.debug(f"Testing PReLU default slope={DEFAULT_PRELU_SLOPE}, shape: {shape}")
+        ref_default = _prelu_ref(x, DEFAULT_PRELU_SLOPE)
+        caffe_out_default = _test_prelu(x, caffe_test_dir)
+        assert_op_correct(caffe_out_default, ref_default, op_name="PReLU(default)")
+
+        slope = 0.5
+        logger.debug(f"Testing PReLU slope={slope}, shape: {shape}")
+        ref_custom = _prelu_ref(x, slope)
+        caffe_out_custom = _test_prelu(x, caffe_test_dir, filler=dict(type="constant", value=slope))
+        assert_op_correct(caffe_out_custom, ref_custom, op_name=f"PReLU(slope={slope})")
+
+
+@pytest.mark.edge
+def test_prelu_edge_cases(caffe_test_dir):
+    """PReLU edge cases."""
+    logger.info("Running test_prelu_edge_cases")
+    slope = DEFAULT_PRELU_SLOPE
+    test_cases = [
+        ("zeros", np.zeros((1, 3, 8, 8), dtype=np.float32)),
+        ("all_negative", np.full((1, 3, 8, 8), -5.0, dtype=np.float32)),
+        ("all_positive", np.full((1, 3, 8, 8), 5.0, dtype=np.float32)),
+    ]
+    for name, x in test_cases:
+        logger.debug(f"Testing PReLU edge case: {name}")
+        ref = _prelu_ref(x, slope)
+        caffe_out = _test_prelu(x, caffe_test_dir)
+        assert_op_correct(caffe_out, ref, op_name=f"PReLU({name})")

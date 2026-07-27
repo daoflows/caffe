@@ -16,16 +16,22 @@
 # under the License.
 import logging
 import numpy as np
-from utils import L, _test_op
+import pytest
+from utils import L, _test_op, assert_op_correct
 
 logger = logging.getLogger(__name__)
+
+SUM = 1
+ASUM = 2
+SUMSQ = 3
+MEAN = 4
 
 
 def _test_reduction(data, test_dir, **kwargs):
     """One iteration of Reduction"""
     logger.info(f"Testing Reduction, input shape: {data.shape}")
     logger.debug(f"Reduction params: {kwargs}")
-    _test_op(data, L.Reduction, "Reduction", test_dir, **kwargs)
+    return _test_op(data, L.Reduction, "Reduction", test_dir, **kwargs)
 
 
 def test_forward_Reduction(caffe_test_dir):
@@ -120,3 +126,115 @@ def test_forward_Reduction(caffe_test_dir):
         axis=3,
         coeff=2.0,
     )
+
+
+def _reduction_ref_1d(x, operation, coeff=1.0):
+    if operation == SUM:
+        ref = np.sum(x)
+    elif operation == ASUM:
+        ref = np.sum(np.abs(x))
+    elif operation == SUMSQ:
+        ref = np.sum(x * x)
+    elif operation == MEAN:
+        ref = np.mean(x)
+    else:
+        raise ValueError(f"Unknown operation: {operation}")
+    return (coeff * ref).astype(np.float32)
+
+
+def _reduction_ref_axis(x, operation, axis, coeff=1.0):
+    if operation == SUM:
+        ref = np.sum(x, axis=axis)
+    elif operation == ASUM:
+        ref = np.sum(np.abs(x), axis=axis)
+    elif operation == SUMSQ:
+        ref = np.sum(x * x, axis=axis)
+    elif operation == MEAN:
+        ref = np.mean(x, axis=axis)
+    else:
+        raise ValueError(f"Unknown operation: {operation}")
+    return (coeff * ref).astype(np.float32)
+
+
+@pytest.mark.correctness
+def test_reduction_correctness(caffe_test_dir):
+    """Reduction correctness test for simple cases (1D and last axis)."""
+    logger.info("Running test_reduction_correctness")
+    np.random.seed(42)
+
+    logger.debug("Testing SUM on 1D")
+    x = np.random.randn(20).astype(np.float32)
+    ref = _reduction_ref_1d(x, SUM)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(SUM-1D)", atol=1e-4)
+
+    logger.debug("Testing MEAN on 1D")
+    x = np.random.randn(20).astype(np.float32)
+    ref = _reduction_ref_1d(x, MEAN)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=MEAN, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(MEAN-1D)", atol=1e-4)
+
+    logger.debug("Testing ASUM on 1D")
+    x = np.random.randn(20).astype(np.float32)
+    ref = _reduction_ref_1d(x, ASUM)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=ASUM, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(ASUM-1D)", atol=1e-4)
+
+    logger.debug("Testing SUMSQ on 1D")
+    x = np.random.randn(20).astype(np.float32)
+    ref = _reduction_ref_1d(x, SUMSQ)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUMSQ, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(SUMSQ-1D)", atol=1e-4)
+
+    logger.debug("Testing SUM with coeff on 1D")
+    x = np.random.randn(15).astype(np.float32)
+    coeff = 2.5
+    ref = _reduction_ref_1d(x, SUM, coeff=coeff)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0, coeff=coeff)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(SUM-coeff-1D)", atol=1e-4)
+
+    logger.debug("Testing SUM on 2D axis=1 (last axis)")
+    x = np.random.randn(4, 5).astype(np.float32)
+    ref = _reduction_ref_axis(x, SUM, axis=1)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=1)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(SUM-2D-axis1)", atol=1e-4)
+
+    logger.debug("Testing MEAN on 2D axis=1")
+    x = np.random.randn(4, 5).astype(np.float32)
+    ref = _reduction_ref_axis(x, MEAN, axis=1)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=MEAN, axis=1)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(MEAN-2D-axis1)", atol=1e-4)
+
+
+@pytest.mark.edge
+def test_reduction_edge_cases(caffe_test_dir):
+    """Reduction edge cases."""
+    logger.info("Running test_reduction_edge_cases")
+
+    logger.debug("Testing all zeros SUM")
+    x = np.zeros(10, dtype=np.float32)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0)
+    assert np.allclose(caffe_out[0], 0.0, atol=1e-6)
+
+    logger.debug("Testing all ones SUM")
+    x = np.ones(10, dtype=np.float32)
+    ref = _reduction_ref_1d(x, SUM)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(ones-SUM)", atol=1e-4)
+
+    logger.debug("Testing all ones MEAN")
+    x = np.ones(20, dtype=np.float32)
+    ref = _reduction_ref_1d(x, MEAN)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=MEAN, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(ones-MEAN)", atol=1e-4)
+
+    logger.debug("Testing coeff=0")
+    x = np.random.randn(10).astype(np.float32)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0, coeff=0.0)
+    assert np.allclose(caffe_out[0], 0.0, atol=1e-6)
+
+    logger.debug("Testing single element")
+    x = np.array([42.0], dtype=np.float32)
+    ref = _reduction_ref_1d(x, SUM)
+    caffe_out = _test_reduction(x, caffe_test_dir, operation=SUM, axis=0)
+    assert_op_correct(caffe_out, ref, op_name="Reduction(single-SUM)", atol=1e-4)
