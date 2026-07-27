@@ -11,57 +11,82 @@ namespace caffe {
 template <typename Dtype>
 void Blob<Dtype>::Reshape(const int num, const int channels, const int height,
     const int width) {
-  vector<int> shape(4);
+  vector<int64_t> shape(4);
   shape[0] = num;
   shape[1] = channels;
   shape[2] = height;
   shape[3] = width;
-  Reshape(shape);
+  shape_ = tvm::ffi::Shape(shape.begin(), shape.end());
+  shape_vec_.resize(4);
+  for (int i = 0; i < 4; ++i) {
+    shape_vec_[i] = static_cast<int>(shape[i]);
+  }
+  count_ = shape_.Product();
+  CHECK_LE(count_, INT_MAX) << "blob size exceeds INT_MAX";
+  if (count_ > capacity_) {
+    capacity_ = count_;
+    data_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+    diff_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+  }
 }
 
 template <typename Dtype>
 void Blob<Dtype>::Reshape(const vector<int>& shape) {
   CHECK_LE(shape.size(), kMaxBlobAxes);
+  vector<int64_t> shape_int64(shape.size());
   count_ = 1;
-  shape_.resize(shape.size());
-  if (!shape_data_ || shape_data_->size() < shape.size() * sizeof(int)) {
-    shape_data_.reset(new SyncedMemory(shape.size() * sizeof(int)));
-  }
-  int* shape_data = static_cast<int*>(shape_data_->mutable_cpu_data());
   for (int i = 0; i < shape.size(); ++i) {
     CHECK_GE(shape[i], 0);
     if (count_ != 0) {
       CHECK_LE(shape[i], INT_MAX / count_) << "blob size exceeds INT_MAX";
     }
     count_ *= shape[i];
-    shape_[i] = shape[i];
-    shape_data[i] = shape[i];
+    shape_int64[i] = shape[i];
   }
+  shape_ = tvm::ffi::Shape(shape_int64.begin(), shape_int64.end());
+  shape_vec_ = shape;
   if (count_ > capacity_) {
     capacity_ = count_;
-    data_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
-    diff_.reset(new SyncedMemory(capacity_ * sizeof(Dtype)));
+    data_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+    diff_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
   }
 }
 
 template <typename Dtype>
 void Blob<Dtype>::Reshape(const BlobShape& shape) {
   CHECK_LE(shape.dim_size(), kMaxBlobAxes);
-  vector<int> shape_vec(shape.dim_size());
+  vector<int64_t> shape_vec(shape.dim_size());
+  shape_vec_.resize(shape.dim_size());
   for (int i = 0; i < shape.dim_size(); ++i) {
     shape_vec[i] = shape.dim(i);
+    shape_vec_[i] = static_cast<int>(shape.dim(i));
   }
-  Reshape(shape_vec);
+  shape_ = tvm::ffi::Shape(shape_vec.begin(), shape_vec.end());
+  count_ = shape_.Product();
+  CHECK_LE(count_, INT_MAX) << "blob size exceeds INT_MAX";
+  if (count_ > capacity_) {
+    capacity_ = count_;
+    data_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+    diff_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+  }
 }
 
 template <typename Dtype>
 void Blob<Dtype>::ReshapeLike(const Blob<Dtype>& other) {
-  Reshape(other.shape());
+  shape_ = tvm::ffi::Shape(other.shape_view().begin(), other.shape_view().end());
+  shape_vec_ = other.shape_vec_;
+  count_ = shape_.Product();
+  CHECK_LE(count_, INT_MAX) << "blob size exceeds INT_MAX";
+  if (count_ > capacity_) {
+    capacity_ = count_;
+    data_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+    diff_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+  }
 }
 
 template <typename Dtype>
 Blob<Dtype>::Blob(const int num, const int channels, const int height,
-    const int width)
+  const int width)
   : capacity_(0) {
   Reshape(num, channels, height, width);
 }
@@ -81,7 +106,7 @@ const Dtype* Blob<Dtype>::cpu_data() const {
 template <typename Dtype>
 void Blob<Dtype>::set_cpu_data(Dtype* data) {
   CHECK(data);
-  size_t size = count_ * sizeof(Dtype);
+  size_t size = static_cast<size_t>(count_) * sizeof(Dtype);
   if (data_->size() != size) {
     data_.reset(new SyncedMemory(size));
     diff_.reset(new SyncedMemory(size));
@@ -126,7 +151,7 @@ template <typename Dtype>
 void Blob<Dtype>::Update() {
   switch (data_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
-    caffe_axpy<Dtype>(count_, Dtype(-1),
+    caffe_axpy<Dtype>(count(), Dtype(-1),
         static_cast<const Dtype*>(diff_->cpu_data()),
         static_cast<Dtype*>(data_->mutable_cpu_data()));
     break;
@@ -150,7 +175,7 @@ Dtype Blob<Dtype>::asum_data() const {
   if (!data_) { return 0; }
   switch (data_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
-    return caffe_cpu_asum(count_, cpu_data());
+    return caffe_cpu_asum(count(), cpu_data());
   case SyncedMemory::UNINITIALIZED:
     return 0;
   default:
@@ -174,7 +199,7 @@ Dtype Blob<Dtype>::asum_diff() const {
   if (!diff_) { return 0; }
   switch (diff_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
-    return caffe_cpu_asum(count_, cpu_diff());
+    return caffe_cpu_asum(count(), cpu_diff());
   case SyncedMemory::UNINITIALIZED:
     return 0;
   default:
@@ -201,7 +226,7 @@ Dtype Blob<Dtype>::sumsq_data() const {
   switch (data_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
     data = cpu_data();
-    sumsq = caffe_cpu_dot(count_, data, data);
+    sumsq = caffe_cpu_dot(count(), data, data);
     break;
   case SyncedMemory::UNINITIALIZED:
     return 0;
@@ -229,7 +254,7 @@ Dtype Blob<Dtype>::sumsq_diff() const {
   switch (diff_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
     diff = cpu_diff();
-    sumsq = caffe_cpu_dot(count_, diff, diff);
+    sumsq = caffe_cpu_dot(count(), diff, diff);
     break;
   case SyncedMemory::UNINITIALIZED:
     return 0;
@@ -254,7 +279,7 @@ void Blob<Dtype>::scale_data(Dtype scale_factor) {
   switch (data_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
     data = mutable_cpu_data();
-    caffe_scal(count_, scale_factor, data);
+    caffe_scal(count(), scale_factor, data);
     return;
   case SyncedMemory::UNINITIALIZED:
     return;
@@ -278,7 +303,7 @@ void Blob<Dtype>::scale_diff(Dtype scale_factor) {
   switch (diff_->head()) {
   case SyncedMemory::HEAD_AT_CPU:
     diff = mutable_cpu_diff();
-    caffe_scal(count_, scale_factor, diff);
+    caffe_scal(count(), scale_factor, diff);
     return;
   case SyncedMemory::UNINITIALIZED:
     return;
@@ -297,16 +322,29 @@ bool Blob<Dtype>::ShapeEquals(const BlobProto& other) {
            LegacyShape(-2) == other.height() &&
            LegacyShape(-1) == other.width();
   }
-  vector<int> other_shape(other.shape().dim_size());
-  for (int i = 0; i < other.shape().dim_size(); ++i) {
-    other_shape[i] = other.shape().dim(i);
+  if (shape_.size() != static_cast<size_t>(other.shape().dim_size())) {
+    return false;
   }
-  return shape_ == other_shape;
+  for (int i = 0; i < other.shape().dim_size(); ++i) {
+    if (shape_[i] != other.shape().dim(i)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 template <typename Dtype>
 void Blob<Dtype>::CopyFrom(const Blob& source, bool copy_diff, bool reshape) {
-  if (source.count() != count_ || source.shape() != shape_) {
+  bool shape_equal = (shape_.size() == source.shape_view().size());
+  if (shape_equal) {
+    for (size_t i = 0; i < shape_.size(); ++i) {
+      if (shape_[i] != source.shape_view()[i]) {
+        shape_equal = false;
+        break;
+      }
+    }
+  }
+  if (source.count() != count_ || !shape_equal) {
     if (reshape) {
       ReshapeLike(source);
     } else {
@@ -314,10 +352,10 @@ void Blob<Dtype>::CopyFrom(const Blob& source, bool copy_diff, bool reshape) {
     }
   }
   if (copy_diff) {
-    caffe_copy(count_, source.cpu_diff(),
+    caffe_copy(count(), source.cpu_diff(),
         static_cast<Dtype*>(diff_->mutable_cpu_data()));
   } else {
-    caffe_copy(count_, source.cpu_data(),
+    caffe_copy(count(), source.cpu_data(),
         static_cast<Dtype*>(data_->mutable_cpu_data()));
   }
 }
@@ -325,46 +363,59 @@ void Blob<Dtype>::CopyFrom(const Blob& source, bool copy_diff, bool reshape) {
 template <typename Dtype>
 void Blob<Dtype>::FromProto(const BlobProto& proto, bool reshape) {
   if (reshape) {
-    vector<int> shape;
     if (proto.has_num() || proto.has_channels() ||
         proto.has_height() || proto.has_width()) {
-      shape.resize(4);
+      vector<int64_t> shape(4);
       shape[0] = proto.num();
       shape[1] = proto.channels();
       shape[2] = proto.height();
       shape[3] = proto.width();
-    } else {
-      shape.resize(proto.shape().dim_size());
-      for (int i = 0; i < proto.shape().dim_size(); ++i) {
-        shape[i] = proto.shape().dim(i);
+      shape_ = tvm::ffi::Shape(shape.begin(), shape.end());
+      shape_vec_.resize(4);
+      for (int i = 0; i < 4; ++i) {
+        shape_vec_[i] = static_cast<int>(shape[i]);
       }
+    } else {
+      vector<int64_t> shape_vec(proto.shape().dim_size());
+      shape_vec_.resize(proto.shape().dim_size());
+      for (int i = 0; i < proto.shape().dim_size(); ++i) {
+        shape_vec[i] = proto.shape().dim(i);
+        shape_vec_[i] = static_cast<int>(proto.shape().dim(i));
+      }
+      shape_ = tvm::ffi::Shape(shape_vec.begin(), shape_vec.end());
     }
-    Reshape(shape);
+    count_ = shape_.Product();
+    CHECK_LE(count_, INT_MAX) << "blob size exceeds INT_MAX";
+    if (count_ > capacity_) {
+      capacity_ = count_;
+      data_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+      diff_.reset(new SyncedMemory(static_cast<size_t>(capacity_ * sizeof(Dtype))));
+    }
   } else {
     CHECK(ShapeEquals(proto)) << "shape mismatch (reshape not set)";
   }
   Dtype* data_vec = mutable_cpu_data();
   if (proto.double_data_size() > 0) {
     CHECK_EQ(count_, proto.double_data_size());
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       data_vec[i] = proto.double_data(i);
     }
   } else {
     CHECK_EQ(count_, proto.data_size());
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       data_vec[i] = proto.data(i);
     }
   }
   if (proto.double_diff_size() > 0) {
     CHECK_EQ(count_, proto.double_diff_size());
     Dtype* diff_vec = mutable_cpu_diff();
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       diff_vec[i] = proto.double_diff(i);
     }
   } else if (proto.diff_size() > 0) {
     CHECK_EQ(count_, proto.diff_size());
     Dtype* diff_vec = mutable_cpu_diff();
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       diff_vec[i] = proto.diff(i);
     }
   }
@@ -373,18 +424,18 @@ void Blob<Dtype>::FromProto(const BlobProto& proto, bool reshape) {
 template <>
 void Blob<double>::ToProto(BlobProto* proto, bool write_diff) const {
   proto->clear_shape();
-  for (int i = 0; i < shape_.size(); ++i) {
+  for (size_t i = 0; i < shape_.size(); ++i) {
     proto->mutable_shape()->add_dim(shape_[i]);
   }
   proto->clear_double_data();
   proto->clear_double_diff();
   const double* data_vec = cpu_data();
-  for (int i = 0; i < count_; ++i) {
+  for (int i = 0; i < count(); ++i) {
     proto->add_double_data(data_vec[i]);
   }
   if (write_diff) {
     const double* diff_vec = cpu_diff();
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       proto->add_double_diff(diff_vec[i]);
     }
   }
@@ -393,18 +444,18 @@ void Blob<double>::ToProto(BlobProto* proto, bool write_diff) const {
 template <>
 void Blob<float>::ToProto(BlobProto* proto, bool write_diff) const {
   proto->clear_shape();
-  for (int i = 0; i < shape_.size(); ++i) {
+  for (size_t i = 0; i < shape_.size(); ++i) {
     proto->mutable_shape()->add_dim(shape_[i]);
   }
   proto->clear_data();
   proto->clear_diff();
   const float* data_vec = cpu_data();
-  for (int i = 0; i < count_; ++i) {
+  for (int i = 0; i < count(); ++i) {
     proto->add_data(data_vec[i]);
   }
   if (write_diff) {
     const float* diff_vec = cpu_diff();
-    for (int i = 0; i < count_; ++i) {
+    for (int i = 0; i < count(); ++i) {
       proto->add_diff(diff_vec[i]);
     }
   }

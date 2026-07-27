@@ -1,7 +1,3 @@
-// Caffe Slim FFI module (tvm-ffi based)
-// This file replaces the old boost::python implementation with tvm-ffi C ABI exports.
-// The shared library built from this file can be loaded via tvm_ffi.load_module() from Python.
-
 #include <tvm/ffi/tvm_ffi.h>
 #include <tvm/ffi/container/tensor.h>
 #include <tvm/ffi/extra/stl.h>
@@ -102,15 +98,12 @@ Tensor Blob_GetData(uintptr_t net_handle, const std::string& blob_name) {
         << "Unknown blob name: " << blob_name;
 
     Dtype* data_ptr = blob->mutable_cpu_data();
-    const std::vector<int>& shape = blob->shape();
-
-    std::vector<int64_t> tensor_shape(shape.begin(), shape.end());
     DLDevice cpu_device{static_cast<DLDeviceType>(kDLCPU), 0};
     DLDataType dtype{static_cast<uint8_t>(kDLFloat), 32, 1};
 
     return Tensor::FromNDAlloc(
         CpuBlobDataAllocator{data_ptr, net},
-        ShapeView(tensor_shape.data(), tensor_shape.size()),
+        blob->shape_view(),
         dtype, cpu_device);
 }
 
@@ -121,15 +114,12 @@ Tensor Blob_GetDiff(uintptr_t net_handle, const std::string& blob_name) {
         << "Unknown blob name: " << blob_name;
 
     Dtype* diff_ptr = blob->mutable_cpu_diff();
-    const std::vector<int>& shape = blob->shape();
-
-    std::vector<int64_t> tensor_shape(shape.begin(), shape.end());
     DLDevice cpu_device{static_cast<DLDeviceType>(kDLCPU), 0};
     DLDataType dtype{static_cast<uint8_t>(kDLFloat), 32, 1};
 
     return Tensor::FromNDAlloc(
         CpuBlobDataAllocator{diff_ptr, net},
-        ShapeView(tensor_shape.data(), tensor_shape.size()),
+        blob->shape_view(),
         dtype, cpu_device);
 }
 
@@ -146,25 +136,23 @@ void Blob_SetData(uintptr_t net_handle, const std::string& blob_name,
     TVM_FFI_CHECK(data.IsContiguous(), tvm::ffi::ValueError)
         << "Input data must be contiguous";
 
-    const std::vector<int>& expected_shape = blob->shape();
+    ShapeView expected_shape = blob->shape_view();
     ShapeView data_shape = data.shape();
-    TVM_FFI_CHECK(data_shape.size() == static_cast<int64_t>(expected_shape.size()),
+    TVM_FFI_CHECK(data_shape.size() == expected_shape.size(),
                    tvm::ffi::ValueError)
         << "Shape dimension mismatch: expected " << expected_shape.size()
         << ", got " << data_shape.size();
 
-    int64_t numel = 1;
     for (size_t i = 0; i < expected_shape.size(); ++i) {
-        TVM_FFI_CHECK(data_shape[i] == static_cast<int64_t>(expected_shape[i]),
+        TVM_FFI_CHECK(data_shape[i] == expected_shape[i],
                        tvm::ffi::ValueError)
             << "Shape mismatch at dim " << i << ": expected " << expected_shape[i]
             << ", got " << data_shape[i];
-        numel *= expected_shape[i];
     }
 
     Dtype* dst = blob->mutable_cpu_data();
     const Dtype* src = static_cast<const Dtype*>(data.data_ptr());
-    std::memcpy(dst, src, static_cast<size_t>(numel) * sizeof(Dtype));
+    std::memcpy(dst, src, static_cast<size_t>(expected_shape.Product()) * sizeof(Dtype));
 }
 
 std::vector<std::string> Net_InputBlobNames(uintptr_t handle) {
@@ -207,6 +195,58 @@ const char* Version() {
     return CAFFE_VERSION;
 }
 
+int Net_NumLayers(uintptr_t handle) {
+    auto& net = *reinterpret_cast<std::shared_ptr<Net<Dtype>>*>(handle);
+    return static_cast<int>(net->layers().size());
+}
+
+std::vector<std::string> Net_LayerNames(uintptr_t handle) {
+    auto& net = *reinterpret_cast<std::shared_ptr<Net<Dtype>>*>(handle);
+    return net->layer_names();
+}
+
+std::string Net_LayerType(uintptr_t handle, int layer_idx) {
+    auto& net = *reinterpret_cast<std::shared_ptr<Net<Dtype>>*>(handle);
+    int num_layers = static_cast<int>(net->layers().size());
+    TVM_FFI_CHECK(layer_idx >= 0 && layer_idx < num_layers, tvm::ffi::ValueError)
+        << "Layer index out of range: " << layer_idx << " (num_layers=" << num_layers << ")";
+    return net->layers()[layer_idx]->type();
+}
+
+std::vector<int64_t> Net_ParamLayerIndices(uintptr_t handle) {
+    auto& net = *reinterpret_cast<std::shared_ptr<Net<Dtype>>*>(handle);
+    int num_params = static_cast<int>(net->params().size());
+    std::vector<int64_t> param_layer_indices(num_params);
+    int param_idx = 0;
+    for (int layer_idx = 0; layer_idx < static_cast<int>(net->layers().size()); ++layer_idx) {
+        int num_blobs = static_cast<int>(net->layers()[layer_idx]->blobs().size());
+        for (int j = 0; j < num_blobs; ++j) {
+            if (param_idx < num_params) {
+                param_layer_indices[param_idx] = layer_idx;
+                ++param_idx;
+            }
+        }
+    }
+    return param_layer_indices;
+}
+
+Tensor Param_GetData(uintptr_t handle, int param_idx) {
+    auto& net = *reinterpret_cast<std::shared_ptr<Net<Dtype>>*>(handle);
+    int num_params = static_cast<int>(net->params().size());
+    TVM_FFI_CHECK(param_idx >= 0 && param_idx < num_params, tvm::ffi::ValueError)
+        << "Param index out of range: " << param_idx << " (num_params=" << num_params << ")";
+
+    auto param_blob = net->params()[param_idx];
+    Dtype* data_ptr = param_blob->mutable_cpu_data();
+    DLDevice cpu_device{static_cast<DLDeviceType>(kDLCPU), 0};
+    DLDataType dtype{static_cast<uint8_t>(kDLFloat), 32, 1};
+
+    return Tensor::FromNDAlloc(
+        CpuBlobDataAllocator{data_ptr, net},
+        param_blob->shape_view(),
+        dtype, cpu_device);
+}
+
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(SetModeCPU, SetModeCPU)
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(SetRandomSeed, SetRandomSeed)
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(Version, Version)
@@ -224,5 +264,10 @@ TVM_FFI_DLL_EXPORT_TYPED_FUNC(Blob_GetShape, Blob_GetShape)
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(Blob_GetData, Blob_GetData)
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(Blob_GetDiff, Blob_GetDiff)
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(Blob_SetData, Blob_SetData)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(Net_NumLayers, Net_NumLayers)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(Net_LayerNames, Net_LayerNames)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(Net_LayerType, Net_LayerType)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(Net_ParamLayerIndices, Net_ParamLayerIndices)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(Param_GetData, Param_GetData)
 
 }  // namespace caffe

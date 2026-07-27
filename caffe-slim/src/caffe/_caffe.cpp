@@ -98,15 +98,12 @@ Tensor Blob_GetData(uintptr_t net_handle, const std::string& blob_name) {
         << "Unknown blob name: " << blob_name;
 
     Dtype* data_ptr = blob->mutable_cpu_data();
-    const std::vector<int>& shape = blob->shape();
-
-    std::vector<int64_t> tensor_shape(shape.begin(), shape.end());
     DLDevice cpu_device{static_cast<DLDeviceType>(kDLCPU), 0};
     DLDataType dtype{static_cast<uint8_t>(kDLFloat), 32, 1};
 
     return Tensor::FromNDAlloc(
         CpuBlobDataAllocator{data_ptr, net},
-        ShapeView(tensor_shape.data(), tensor_shape.size()),
+        blob->shape_view(),
         dtype, cpu_device);
 }
 
@@ -117,15 +114,12 @@ Tensor Blob_GetDiff(uintptr_t net_handle, const std::string& blob_name) {
         << "Unknown blob name: " << blob_name;
 
     Dtype* diff_ptr = blob->mutable_cpu_diff();
-    const std::vector<int>& shape = blob->shape();
-
-    std::vector<int64_t> tensor_shape(shape.begin(), shape.end());
     DLDevice cpu_device{static_cast<DLDeviceType>(kDLCPU), 0};
     DLDataType dtype{static_cast<uint8_t>(kDLFloat), 32, 1};
 
     return Tensor::FromNDAlloc(
         CpuBlobDataAllocator{diff_ptr, net},
-        ShapeView(tensor_shape.data(), tensor_shape.size()),
+        blob->shape_view(),
         dtype, cpu_device);
 }
 
@@ -142,25 +136,23 @@ void Blob_SetData(uintptr_t net_handle, const std::string& blob_name,
     TVM_FFI_CHECK(data.IsContiguous(), tvm::ffi::ValueError)
         << "Input data must be contiguous";
 
-    const std::vector<int>& expected_shape = blob->shape();
+    ShapeView expected_shape = blob->shape_view();
     ShapeView data_shape = data.shape();
-    TVM_FFI_CHECK(data_shape.size() == static_cast<int64_t>(expected_shape.size()),
+    TVM_FFI_CHECK(data_shape.size() == expected_shape.size(),
                    tvm::ffi::ValueError)
         << "Shape dimension mismatch: expected " << expected_shape.size()
         << ", got " << data_shape.size();
 
-    int64_t numel = 1;
     for (size_t i = 0; i < expected_shape.size(); ++i) {
-        TVM_FFI_CHECK(data_shape[i] == static_cast<int64_t>(expected_shape[i]),
+        TVM_FFI_CHECK(data_shape[i] == expected_shape[i],
                        tvm::ffi::ValueError)
             << "Shape mismatch at dim " << i << ": expected " << expected_shape[i]
             << ", got " << data_shape[i];
-        numel *= expected_shape[i];
     }
 
     Dtype* dst = blob->mutable_cpu_data();
     const Dtype* src = static_cast<const Dtype*>(data.data_ptr());
-    std::memcpy(dst, src, static_cast<size_t>(numel) * sizeof(Dtype));
+    std::memcpy(dst, src, static_cast<size_t>(expected_shape.Product()) * sizeof(Dtype));
 }
 
 std::vector<std::string> Net_InputBlobNames(uintptr_t handle) {

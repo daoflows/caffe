@@ -137,19 +137,20 @@ if(NOT EXISTS "${_caffe_ffi_src}")
   set(_caffe_ffi_src "${CAFFE_SRC_DIR}/caffe/_caffe.cpp")
 endif()
 
+set(CAFFE_PYTHON_PACKAGE_DIR "${CAFFE_ROOT}/python/caffe")
 add_library(_caffe SHARED "${_caffe_ffi_src}")
 set_target_properties(_caffe PROPERTIES
   PREFIX ""
   OUTPUT_NAME "_caffe"
-  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
+  LIBRARY_OUTPUT_DIRECTORY "${CAFFE_PYTHON_PACKAGE_DIR}"
+  RUNTIME_OUTPUT_DIRECTORY "${CAFFE_PYTHON_PACKAGE_DIR}"
 )
 if(MSVC)
   foreach(config_type Release RELEASE Debug DEBUG RelWithDebInfo)
     set_target_properties(_caffe PROPERTIES
-      RUNTIME_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-      LIBRARY_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
-      ARCHIVE_OUTPUT_DIRECTORY_${config_type} "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe"
+      RUNTIME_OUTPUT_DIRECTORY_${config_type} "${CAFFE_PYTHON_PACKAGE_DIR}"
+      LIBRARY_OUTPUT_DIRECTORY_${config_type} "${CAFFE_PYTHON_PACKAGE_DIR}"
+      ARCHIVE_OUTPUT_DIRECTORY_${config_type} "${CAFFE_PYTHON_PACKAGE_DIR}"
     )
   endforeach()
 endif()
@@ -182,27 +183,46 @@ if(TARGET tvm_ffi::shared)
   add_custom_command(TARGET _caffe POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
       $<TARGET_FILE:tvm_ffi::shared>
-      "${CMAKE_CURRENT_SOURCE_DIR}/python/pycaffe/"
-    COMMENT "Copying tvm_ffi shared library to pycaffe package directory"
+      "${CAFFE_PYTHON_PACKAGE_DIR}/"
+    COMMENT "Copying tvm_ffi shared library to caffe package directory"
   )
 endif()
 
 enable_testing()
 
 install(TARGETS _caffe
-  LIBRARY DESTINATION pycaffe
-  RUNTIME DESTINATION pycaffe
+  LIBRARY DESTINATION caffe
+  RUNTIME DESTINATION caffe
 )
-install(DIRECTORY python/pycaffe/
-  DESTINATION pycaffe
+if(TARGET tvm_ffi::shared)
+  install(FILES $<TARGET_FILE:tvm_ffi::shared>
+    DESTINATION caffe
+  )
+endif()
+install(DIRECTORY ${CAFFE_PYTHON_PACKAGE_DIR}/
+  DESTINATION caffe
   FILES_MATCHING
   PATTERN "*.py"
-  PATTERN "*.cpp" EXCLUDE
+  PATTERN "*.so"
+  PATTERN "*.pyd"
+  PATTERN "*.pyc" EXCLUDE
+  PATTERN "__pycache__" EXCLUDE
   PATTERN "test" EXCLUDE
-  PATTERN "proto" EXCLUDE
 )
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../caffeproto/
   DESTINATION caffeproto
   FILES_MATCHING
   PATTERN "*.py"
+)
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../protos/
+  DESTINATION protos
+  FILES_MATCHING
+  PATTERN "*.py"
+)
+install(DIRECTORY ${TVM_FFI_DIR}/python/tvm_ffi/
+  DESTINATION tvm_ffi
+  FILES_MATCHING
+  PATTERN "*.py"
+  PATTERN "*.pyi"
+  PATTERN "py.typed"
 )

@@ -9,6 +9,32 @@ from typing import List, Optional, Sequence, Union
 
 import numpy as np
 
+__version__ = "1.0.0-slim"
+
+_PACKAGE_DIR = Path(__file__).resolve().parent
+
+
+def _setup_library_paths():
+    """Set up library search paths before importing tvm_ffi.
+    
+    Ensures libtvm_ffi.so and _caffe.so can be found from our package directory.
+    """
+    lib_dir = str(_PACKAGE_DIR)
+    if sys.platform.startswith("win32"):
+        os.environ["PATH"] = lib_dir + os.pathsep + os.environ.get("PATH", "")
+        if hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(lib_dir)
+            except (OSError, FileNotFoundError):
+                pass
+    elif sys.platform.startswith("darwin"):
+        os.environ["DYLD_LIBRARY_PATH"] = lib_dir + os.pathsep + os.environ.get("DYLD_LIBRARY_PATH", "")
+    else:
+        os.environ["LD_LIBRARY_PATH"] = lib_dir + os.pathsep + os.environ.get("LD_LIBRARY_PATH", "")
+
+
+_setup_library_paths()
+
 try:
     import tvm_ffi
 except ImportError:
@@ -27,7 +53,7 @@ def _find_lib():
     if tvm_ffi is None:
         raise ImportError("tvm_ffi is required. Please install tvm-ffi.")
 
-    current_dir = Path(__file__).resolve().parent
+    current_dir = _PACKAGE_DIR
     search_paths = [
         current_dir,
         current_dir.parent.parent.parent / "build" / "python" / "caffe",

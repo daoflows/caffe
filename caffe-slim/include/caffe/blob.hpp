@@ -2,8 +2,13 @@
 #define CAFFE_BLOB_HPP_
 
 #include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <tvm/ffi/container/shape.h>
 
 #include "caffe/common.hpp"
 #include "caffe/proto/caffe.pb.h"
@@ -30,18 +35,22 @@ class Blob {
   void ReshapeLike(const Blob& other);
   inline string shape_string() const {
     ostringstream stream;
-    for (int i = 0; i < shape_.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(shape_.size()); ++i) {
       stream << shape_[i] << " ";
     }
     stream << "(" << count_ << ")";
     return stream.str();
   }
-  inline const vector<int>& shape() const { return shape_; }
+  inline const vector<int>& shape() const { return shape_vec_; }
+  inline const int* shape_data() const { return shape_vec_.data(); }
+  inline tvm::ffi::ShapeView shape_view() const {
+    return tvm::ffi::ShapeView(shape_.data(), shape_.size());
+  }
   inline int shape(int index) const {
-    return shape_[CanonicalAxisIndex(index)];
+    return static_cast<int>(shape_[CanonicalAxisIndex(index)]);
   }
   inline int num_axes() const { return static_cast<int>(shape_.size()); }
-  inline int count() const { return count_; }
+  inline int count() const { return static_cast<int>(count_); }
 
   inline int count(int start_axis, int end_axis) const {
     CHECK_LE(start_axis, end_axis);
@@ -49,11 +58,12 @@ class Blob {
     CHECK_GE(end_axis, 0);
     CHECK_LE(start_axis, num_axes());
     CHECK_LE(end_axis, num_axes());
-    int count = 1;
+    int64_t count = 1;
     for (int i = start_axis; i < end_axis; ++i) {
       count *= shape(i);
     }
-    return count;
+    CHECK_LE(count, INT_MAX);
+    return static_cast<int>(count);
   }
   inline int count(int start_axis) const {
     return count(start_axis, num_axes());
@@ -97,12 +107,14 @@ class Blob {
     CHECK_LE(h, height());
     CHECK_GE(width(), 0);
     CHECK_LE(w, width());
-    return ((n * channels() + c) * height() + h) * width() + w;
+    int64_t off = ((static_cast<int64_t>(n) * channels() + c) * height() + h) * width() + w;
+    CHECK_LE(off, INT_MAX);
+    return static_cast<int>(off);
   }
 
   inline int offset(const vector<int>& indices) const {
     CHECK_LE(static_cast<int>(indices.size()), num_axes());
-    int offset = 0;
+    int64_t offset = 0;
     for (int i = 0; i < num_axes(); ++i) {
       offset *= shape(i);
       if (static_cast<int>(indices.size()) > i) {
@@ -111,7 +123,8 @@ class Blob {
         offset += indices[i];
       }
     }
-    return offset;
+    CHECK_LE(offset, INT_MAX);
+    return static_cast<int>(offset);
   }
 
   void CopyFrom(const Blob<Dtype>& source, bool copy_diff = false,
@@ -174,10 +187,10 @@ class Blob {
  protected:
   shared_ptr<SyncedMemory> data_;
   shared_ptr<SyncedMemory> diff_;
-  shared_ptr<SyncedMemory> shape_data_;
-  vector<int> shape_;
-  int count_;
-  int capacity_;
+  tvm::ffi::Shape shape_;
+  vector<int> shape_vec_;
+  int64_t count_;
+  int64_t capacity_;
 
   DISABLE_COPY_AND_ASSIGN(Blob);
 };
