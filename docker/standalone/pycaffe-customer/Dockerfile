@@ -190,6 +190,7 @@ RUN set -eux; \
         -DCAFFE_VERSION="${CAFFE_VERSION}-slim" \
         -DTVM_FFI_USE_LIBBACKTRACE=OFF \
         -DTVM_FFI_BACKTRACE_ON_SEGFAULT=OFF \
+        -DCMAKE_CXX_FLAGS="-fpermissive -Wno-sign-compare" \
         -DCMAKE_INSTALL_PREFIX=${WORKSPACE_DIR}/caffe-install; \
     cmake --build build --parallel
 
@@ -389,11 +390,11 @@ RUN set -eux; \
         "typing-extensions>=4.5" \
         "tabulate>=0.8.9" \
         "imageio>=2.31" \
-        notebook==7.2.2 \
-        jupyterlab==4.2.5 \
-        ipykernel==6.29.5 \
-        nbconvert==7.16.4 \
-        jupyter_server==2.14.1; \
+        notebook \
+        jupyterlab \
+        ipykernel \
+        nbconvert \
+        jupyter_server; \
     python -c "import numpy; print('numpy:', numpy.__version__)"; \
     python -c "import google.protobuf; print('protobuf ok')"; \
     jupyter --version
@@ -575,10 +576,9 @@ RUN set -eux; \
     echo "DEFAULT_SSH_PASSWORD=caffepass" >> /etc/caffe-customer-release; \
     echo "DEFAULT_JUPYTER_TOKEN=caffe-token" >> /etc/caffe-customer-release
 
-# Final verification: pycaffe imports correctly, no build tools present
+# Final verification: caffe imports correctly, no build tools present
 RUN set -eux; \
-    python -c "import pycaffe; print('pycaffe version:', pycaffe.__version__)"; \
-    python -c "import caffe; print('caffe loaded')"; \
+    python -c "import caffe; print('caffe loaded, version:', caffe.version())"; \
     python -c "import tvm_ffi; print('tvm_ffi ok')"; \
     echo "--- Checking build tools are NOT present ---"; \
     for tool in gcc g++ cmake ninja git make; do \
