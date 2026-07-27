@@ -56,7 +56,7 @@ RUN set -eux; \
         wget \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*; \
-    echo "Base system ready (Ubuntu 26.04 + Chinese locale + timezone)"
+    echo "Base system ready"
 
 # ==============================================================================
 # 阶段 1: base-builder — 构建工具链 + Python 科学计算包

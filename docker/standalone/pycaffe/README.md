@@ -66,6 +66,6 @@ docker run --rm caffe-cpu:standalone-pycaffe \
 # 完整验证
 docker run --rm caffe-cpu:standalone-pycaffe verify-pycaffe.sh
 
-# 对标验证（对比 caffex/python 行为）
+# 独立验证（运行基础功能验证）
 docker run --rm caffe-cpu:standalone-pycaffe verify-parity.sh
 ```

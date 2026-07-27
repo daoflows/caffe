@@ -1,7 +1,7 @@
 # ==============================================================================
-# PyCaffe 独立 Dockerfile (CPU-only, Ubuntu 24.04)
+# PyCaffe 独立 Dockerfile (CPU-only, Ubuntu 26.04)
 #
-# 说明：基于 ubuntu:24.04，仅使用 caffe-slim/ 目录（含 C++ 源码、头文件、pycaffe、
+# 说明：基于 ubuntu:26.04，仅使用 caffe-slim/ 目录（含 C++ 源码、头文件、pycaffe、
 #       caffeproto）和 tvm-ffi/ 子模块，从零构建。不依赖 caffex/、
 #       python-module 或任何内部预构建镜像。
 # 构建上下文：vendor/（caffe 的父目录，以便同时访问 caffe/caffe-slim/ 和 tvm-ffi/）
@@ -17,9 +17,9 @@
 # ==============================================================================
 
 # ==============================================================================
-# 阶段 0: base-system — 公共基础层（Ubuntu 24.04）
+# 阶段 0: base-system — 公共基础层（Ubuntu 26.04）
 # ==============================================================================
-FROM ubuntu:24.04 AS base-system
+FROM ubuntu:26.04 AS base-system
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -29,15 +29,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
 
-# 阿里云镜像源
+# 阿里云镜像源（Ubuntu 26.04 使用 deb822 格式，先删除 ubuntu.sources 再写入传统格式）
 RUN set -eux; \
-    cp /etc/apt/sources.list /etc/apt/sources.list.bak; \
-    cat > /etc/apt/sources.list << 'EOF'
-deb http://mirrors.aliyun.com/ubuntu/ noble main restricted universe multiverse
-deb http://mirrors.aliyun.com/ubuntu/ noble-updates main restricted universe multiverse
-deb http://mirrors.aliyun.com/ubuntu/ noble-backports main restricted universe multiverse
-deb http://mirrors.aliyun.com/ubuntu/ noble-security main restricted universe multiverse
-EOF
+    rm -f /etc/apt/sources.list.d/ubuntu.sources; \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ resolute main restricted universe multiverse" > /etc/apt/sources.list; \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ resolute-updates main restricted universe multiverse" >> /etc/apt/sources.list; \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ resolute-backports main restricted universe multiverse" >> /etc/apt/sources.list; \
+    echo "deb http://mirrors.aliyun.com/ubuntu/ resolute-security main restricted universe multiverse" >> /etc/apt/sources.list
 
 # 基础工具
 RUN apt-get update && \
@@ -62,7 +60,7 @@ ARG BUILDER_GID=1000
 ARG WORKSPACE_DIR=/workspace
 
 LABEL stage=base-builder
-LABEL maintainer="Caffe Standalone Docker (Ubuntu 24.04)"
+LABEL maintainer="Caffe Standalone Docker (Ubuntu 26.04)"
 LABEL description="PyCaffe standalone build environment (caffe-slim/ only)"
 
 # 安装 C++ 编译工具链和构建依赖
@@ -97,7 +95,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1 && \
 
 # 安装 Python 科学计算包 + 构建工具
 RUN pip install --break-system-packages --no-cache-dir \
-        "numpy<2" \
+        "numpy>=2" \
         "scipy>=1.7" \
         "matplotlib>=3.5" \
         "scikit-image>=0.19" \
@@ -248,7 +246,7 @@ FROM base-builder AS runtime
 ARG CAFFE_VERSION=1.0.0
 ARG WORKSPACE_DIR=/workspace
 
-LABEL maintainer="Caffe Standalone Docker (Ubuntu 24.04)"
+LABEL maintainer="Caffe Standalone Docker (Ubuntu 26.04)"
 LABEL description="PyCaffe CPU-only standalone runtime (caffe-slim/ + tvm-ffi)"
 LABEL caffe.version=${CAFFE_VERSION}-slim
 
@@ -421,133 +419,10 @@ RUN set -eux; \
 RUN mkdir -p ${WORKSPACE_DIR}/pycaffe && \
     cp ${WORKSPACE_DIR}/caffe/caffe-slim/pycaffe/lenet_deploy.prototxt ${WORKSPACE_DIR}/pycaffe/
 
-# 创建验证脚本
-RUN cat > /usr/local/bin/verify-pycaffe.sh << 'VEOF'
-#!/bin/bash
-set -euo pipefail
-
-PASS=0
-FAIL=0
-SKIP=0
-
-red()    { echo -e "\033[31m$*\033[0m"; }
-green()  { echo -e "\033[32m$*\033[0m"; }
-yellow() { echo -e "\033[33m$*\033[0m"; }
-blue()   { echo -e "\033[34m$*\033[0m"; }
-
-pass_msg() { green "  [PASS] $1"; PASS=$((PASS + 1)); }
-fail_msg() { red   "  [FAIL] $1"; FAIL=$((FAIL + 1)); }
-skip_msg() { yellow "  [SKIP] $1"; SKIP=$((SKIP + 1)); }
-
-echo "=============================================="
-echo "  PyCaffe Verification Suite (slim/inference)"
-echo "=============================================="
-echo ""
-
-# 1. Import & Version
-blue "--- 1. Import & Version ---"
-if python -c "import pycaffe" 2>&1; then
-    pass_msg "import pycaffe succeeded"
-    VERSION=$(python -c "import pycaffe; print(pycaffe.__version__)" 2>&1)
-    if [ -n "${VERSION}" ]; then
-        pass_msg "pycaffe.__version__ = ${VERSION}"
-    else
-        fail_msg "pycaffe.__version__ is empty"
-    fi
-else
-    fail_msg "import pycaffe failed"
-fi
-
-# 2. Constants
-blue "--- 2. Phase Constants ---"
-TRAIN_VAL=$(python -c "import pycaffe; print(pycaffe.TRAIN)" 2>/dev/null)
-TEST_VAL=$(python -c "import pycaffe; print(pycaffe.TEST)" 2>/dev/null)
-[ -n "${TRAIN_VAL}" ] && pass_msg "pycaffe.TRAIN = ${TRAIN_VAL}" || fail_msg "pycaffe.TRAIN not available"
-[ -n "${TEST_VAL}" ] && pass_msg "pycaffe.TEST = ${TEST_VAL}" || fail_msg "pycaffe.TEST not available"
-
-# 3. Net class
-blue "--- 3. Net Class ---"
-if python -c "from pycaffe import Net; print('Net class available')" 2>&1; then
-    pass_msg "pycaffe.Net class available"
-else
-    fail_msg "pycaffe.Net class not available"
-fi
-
-# 4. set_mode_cpu
-blue "--- 4. set_mode_cpu ---"
-if python -c "import pycaffe; pycaffe.set_mode_cpu(); print('set_mode_cpu OK')" 2>&1; then
-    pass_msg "pycaffe.set_mode_cpu() succeeded"
-else
-    fail_msg "pycaffe.set_mode_cpu() failed"
-fi
-
-# 5. LeNet forward pass
-blue "--- 5. LeNet Forward Pass ---"
-LENET_PROTO="${WORKSPACE_DIR}/pycaffe/lenet_deploy.prototxt"
-if [ -f "${LENET_PROTO}" ]; then
-    if python -c "
-import pycaffe
-pycaffe.set_mode_cpu()
-net = pycaffe.Net('${LENET_PROTO}', pycaffe.TEST)
-print('Net created successfully')
-net.forward()
-print('Forward pass OK')
-print('Blob names:', net.blob_names)
-print('Output names:', net.outputs)
-" 2>&1; then
-        pass_msg "LeNet Net creation and forward pass succeeded"
-    else
-        fail_msg "LeNet Net creation or forward pass failed"
-    fi
-else
-    skip_msg "LeNet prototxt not found"
-fi
-
-# 6. Submodules
-blue "--- 6. Submodules ---"
-for submod in transforms classifier detector net_spec draw coord_map; do
-    if python -c "import pycaffe.${submod}; print('${submod} OK')" 2>/dev/null; then
-        pass_msg "pycaffe.${submod} import succeeded"
-    else
-        skip_msg "pycaffe.${submod} not available (optional)"
-    fi
-done
-
-# 7. Solvers (stubbed in slim)
-blue "--- 7. Solver Classes (stubbed in slim) ---"
-for solver_cls in SGDSolver AdamSolver; do
-    if python -c "from pycaffe import ${solver_cls}; print('${solver_cls} available (stub)')" 2>/dev/null; then
-        pass_msg "pycaffe.${solver_cls} stub available"
-    else
-        fail_msg "pycaffe.${solver_cls} stub not available"
-    fi
-done
-
-# Summary
-echo ""
-echo "=============================================="
-TOTAL=$((PASS + FAIL + SKIP))
-echo "  Results: ${PASS} PASS / ${FAIL} FAIL / ${SKIP} SKIP (${TOTAL} total)"
-echo "=============================================="
-
-if [ "${FAIL}" -gt 0 ]; then
-    red "  Verification FAILED: ${FAIL} test(s) failed"
-    exit 1
-else
-    green "  Verification PASSED"
-    exit 0
-fi
-VEOF
-RUN chmod +x /usr/local/bin/verify-pycaffe.sh
-
-# 创建 parity 脚本（占位）
-RUN cat > /usr/local/bin/verify-parity.sh << 'VEOF'
-#!/bin/bash
-echo "Parity check not applicable for slim inference-only build."
-echo "Use origin image for full BVLC Caffe parity."
-exit 0
-VEOF
-RUN chmod +x /usr/local/bin/verify-parity.sh
+# 复制验证脚本
+COPY caffe/docker/standalone/pycaffe/scripts/verify-pycaffe.sh /usr/local/bin/verify-pycaffe.sh
+COPY caffe/docker/standalone/pycaffe/scripts/verify-parity.sh /usr/local/bin/verify-parity.sh
+RUN chmod +x /usr/local/bin/verify-pycaffe.sh /usr/local/bin/verify-parity.sh
 
 # 设置环境变量
 ENV PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
