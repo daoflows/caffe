@@ -167,8 +167,17 @@ log_blank
 # 执行构建
 # ------------------------------------------------------------------------------
 log_section "构建阶段"
-log_warn "首次构建可能需要 15-30 分钟，请耐心等待..."
+log_warn "基于 caffe-cpu:standalone-pycaffe 扩展构建，通常需要 2-5 分钟..."
 log_blank
+
+# 检查基础镜像是否存在
+if ! ${CONTAINER_TOOL} image inspect caffe-cpu:standalone-pycaffe &>/dev/null; then
+    log_error "基础镜像 caffe-cpu:standalone-pycaffe 不存在"
+    log_info "请先构建基础镜像:"
+    log_info "  cd ${VENDOR_DIR} && docker build -t caffe-cpu:standalone-pycaffe --target runtime -f caffe/docker/standalone/pycaffe/Dockerfile ."
+    exit 1
+fi
+log_success "基础镜像: caffe-cpu:standalone-pycaffe"
 
 BUILD_START_TS=$(date +%s)
 

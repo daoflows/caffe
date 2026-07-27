@@ -1,0 +1,68 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "setuptools-scm>=8.0", "ninja>=1.11", "cmake>=3.26"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pycaffe"
+version = "1.0.0"
+description = "Caffe Python Interface - CPU-only, built with scikit-build-core + CMake + Ninja"
+readme = { text = "PyCaffe: Caffe Deep Learning Framework Python Interface", content-type = "text/plain" }
+license = { text = "BSD-2-Clause" }
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+keywords = ["deep learning", "caffe", "inference", "neural network"]
+requires-python = ">=3.14"
+
+dependencies = [
+    "numpy>=2.3",
+    "scipy>=1.14",
+    "scikit-image>=0.22",
+    "matplotlib>=3.8",
+    "protobuf>=4.25",
+    "h5py>=3.10",
+    "networkx>=3.2",
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+    "six>=1.16.0",
+    "python-dateutil>=2.8",
+    "typing-extensions>=4.5",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "jupyter>=1.0",
+    "ipython>=8.18",
+    "notebook>=7.0",
+]
+full = [
+    "pycaffe[test]",
+    "pandas>=2.1",
+    "black>=24.0",
+    "isort>=5.13",
+    "mypy>=1.8",
+    "graphviz>=0.20",
+    "python-gflags>=3.1",
+    "leveldb>=0.20",
+]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+wheel.py-api = "py3"
+wheel.packages = ["python/pycaffe"]
+wheel.install-dir = ""
+build-dir = "build-wheel"
+cmake.version = "CMakeLists.txt"
+cmake.build-type = "Release"
+ninja.make-fallback = false
+
+[tool.scikit-build.cmake.define]
+CMAKE_EXPORT_COMPILE_COMMANDS = "ON"

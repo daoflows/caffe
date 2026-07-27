@@ -1,0 +1,43 @@
+[model]
+frontend = "caffe"               # 原始模型使用的框架, 支持 pytorch,onnx,caffe,tensorflow
+prototxt_file_path = "ResNet-50-deploy.prototxt"
+caffemodel_file_path = "ResNet-50-model.caffemodel"
+
+[input]
+name = "data"                     # 模型的输入名称
+shape = [1, 3, 224, 224]          # 模型的输入 shape
+format = "RGB"                    # 支持 RGB,BGR,GRAY
+layout = "NHWC"                   #支持 NHWC,NCHW,NV12,NV21
+dtype = "uint8"                   # 支持"uint8", "int16"
+mean = [ 103.939, 116.779, 123.68] 
+std = [ 1, 1, 1]
+
+[compile] # 编译选项
+target = "SIM_VTA2.0_PRO"            # 编译目标平台。
+                                 # 仿真: SIM_VTA2.0_PRO（默认），SIM_VTA2.0
+                                 # 硬件: XM_V500，XM210V200，XM210V300，XM650V300
+                                 # SIM_VTA2.0_PRO，XM650V300，支持 MTE
+dataset = "dataset.txt"          # 存放校准数据文件路径的文本文件
+quantized_dtype = "a8w8"         # a8w8, a8w4, a16w8,a8w4_auto, a16w8_auto,定义量化的数据类型和位宽。a代表激活(activation)，w代表权重(weight)。
+quantized_method = "channel"     # 设置权重量化方法。layer为逐层量化，channel为逐通道量化。默认为channel
+activation_mode = "percentile"   # 设定计算激活值量化范围的算法。max使用最大最小值，percentile可去除离群值影响，kl_divergence和mse则寻求最小化信息损失。
+percentile = 0.99999             # 当activation_mode为percentile时生效，通过设定的分位数（推荐0.9999、0.99999）作为量化阈值，可有效避免极端离群值的影响。
+weight_mode = "max"              # 针对权重的量化算法 max,percentile
+asymmetric_activation = true     # 是否使用非对称量化, 非对称量化精度更高
+output_format = "float"          # 输出数据格式  float,fixpoint,fixpoint_vta
+tune = true                      # 是否启用调优模型；开启后工具链将自动执行调优操作，此过程需耗费相对较长时间；若关闭该功能，则会从autolibs库中进行搜索以完成调优。
+# Adaround 配置: enable 控制开关; num_iteration 为训练迭代次数; warm_start 为预热因子; reg_param 为正则化参数。
+# channel_wise 控制权重按通道量化; beta_range_start/beta_range_end 为退火起止参数。
+adaround = { enable = false, num_iteration = 10000, warm_start = 0.2, reg_param = 0.01, channel_wise = true, beta_range_start = 20, beta_range_end = 2 }
+
+[inference] # 推理选项
+priority = "bandwidth_first"     # 优先级，可选参数perf_first_L0,perf_first_L1,perf_first_L2,bandwidth_first
+device_ip = "10.16.5.239"        # 板端设备IP，用于telnet操作，在目标平台为vta2.0时有效
+device_mount_dir = "/home"		 # 板端挂载目录，用于指明推理所需资源在板端的目录，不要使用 /tmp 和 /var 作为挂载目录
+insn_loop = false                # 是否使用loop压缩指令
+
+[performance] # 性能选项
+frequency = 666           # NPU工作频率(MHz)
+
+[excelreport] # 报告选项
+user = "root"                    # 报告记录者名称

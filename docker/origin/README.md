@@ -23,17 +23,23 @@ docker/origin/
 │   └── supervisord.conf             # Supervisord 主配置
 ├── scripts/                         # 辅助脚本
 │   ├── generate-makefile-config.sh  # 自动生成 Makefile.config
+│   ├── healthcheck-caffe.sh         # Runtime 容器健康检查
 │   ├── healthcheck-jupyter.sh       # Jupyter 容器健康检查
 │   └── verify-caffe.sh              # Caffe 安装验证脚本
+├── dist/                            # 镜像导出目录（.gitkeep 跟踪）
 ├── .gitignore
 ├── BUILD_REPORT.md                  # 基础镜像构建验证报告
 ├── Dockerfile                       # 基础 CPU-only 运行时镜像（4阶段）
 ├── Dockerfile.jupyter-ssh           # Jupyter + SSH 镜像（4阶段，runtime-jupyter）
 ├── README.md                        # 本文件
-├── build.sh                         # 基础镜像构建脚本
+├── USER_GUIDE.md                    # 面向最终用户的使用指南
+├── build.sh                         # 镜像构建脚本
 ├── entrypoint-jupyter.sh            # Jupyter 容器入口脚本
-├── run.sh                           # 基础容器运行脚本
-└── run-jupyter.sh                   # Jupyter 容器一键管理脚本（start/stop/restart/status/logs）
+├── export.sh                        # 镜像导出脚本
+├── load-and-verify.sh               # 镜像加载与验证脚本
+├── run.sh                           # 基础容器运行脚本（开发用，挂载宿主机目录）
+├── run-jupyter.sh                   # Jupyter 容器一键管理脚本（开发用，start/stop/restart/status/logs）
+└── run-standalone.sh                # 独立运行脚本（分发用，不挂载宿主机目录）
 ```
 
 ## 快速开始
@@ -59,9 +65,9 @@ cd docker/origin
 ```bash
 # 构建 Jupyter+SSH 镜像
 cd docker/origin
-docker build -t caffe-cpu:jupyter --target runtime-jupyter -f Dockerfile.jupyter-ssh ../..
+./build.sh --jupyter
 
-# 使用管理脚本启动（推荐）
+# 使用管理脚本启动（推荐，开发用）
 ./run-jupyter.sh start
 
 # 查看访问信息
@@ -74,30 +80,55 @@ docker build -t caffe-cpu:jupyter --target runtime-jupyter -f Dockerfile.jupyter
 
 ## 构建
 
-### 基础镜像构建
-
 `build.sh` 封装了 `docker build` 调用，支持以下用法：
 
-- `./build.sh` — 默认构建 runtime 阶段，标签 `caffe-cpu:latest`
-- `./build.sh -t v1.0` — 指定标签
-- `./build.sh --target builder-dev` — 构建指定阶段（可选：`base-system`、`base-builder`、`builder`、`runtime`）
-- `./build.sh --no-cache` — 无缓存构建
-- `./build.sh --build-arg BUILDER_UID=1001` — 传递构建参数
-- `./build.sh -h` — 显示帮助
+### 一键构建所有镜像（推荐）
+
+```bash
+# 构建基础运行时镜像和 Jupyter 镜像
+./build.sh --all
+```
+
+### 基础镜像构建
+
+```bash
+# 默认构建 runtime 阶段，标签 caffe-cpu:origin-runtime
+./build.sh
+
+# 指定标签
+./build.sh -t v1.0
+
+# 构建指定阶段（可选：base-system、base-builder、builder、runtime）
+./build.sh --target builder-dev
+
+# 无缓存构建
+./build.sh --no-cache
+
+# 传递构建参数
+./build.sh --build-arg BUILDER_UID=1001
+
+# 显示帮助
+./build.sh -h
+```
 
 ### Jupyter+SSH 镜像构建
 
 ```bash
-# 构建 Jupyter 镜像
-docker build -t caffe-cpu:jupyter --target runtime-jupyter \
+# 构建 Jupyter 镜像（标签 caffe-cpu:origin-jupyter）
+./build.sh --jupyter
+
+# 或使用原生 docker build 命令
+docker build -t caffe-cpu:origin-jupyter --target runtime-jupyter \
   -f Dockerfile.jupyter-ssh ../../
 
 # 指定构建参数
-docker build -t caffe-cpu:jupyter --target runtime-jupyter \
+docker build -t caffe-cpu:origin-jupyter --target runtime-jupyter \
   --build-arg BUILDER_UID=$(id -u) \
   --build-arg BUILDER_GID=$(id -g) \
   -f Dockerfile.jupyter-ssh ../../
 ```
+
+> **说明**：旧的标签 `caffe-cpu:latest` 和 `caffe-cpu:jupyter` 以及 `run.sh`、`run-jupyter.sh` 脚本保留用于本地开发，它们会挂载宿主机目录以便源码修改和调试。独立分发的镜像使用 `caffe-cpu:origin-runtime` 和 `caffe-cpu:origin-jupyter` 标签，配合 `run-standalone.sh` 使用时不挂载宿主机目录。
 
 ### 构建耗时
 
@@ -110,8 +141,61 @@ docker build -t caffe-cpu:jupyter --target runtime-jupyter \
 
 | 镜像标签 | 大小 | 说明 |
 |---------|------|------|
-| `caffe-cpu:latest` | ~3.36GB | 基础运行时镜像 |
-| `caffe-cpu:jupyter` | ~3.8-4.0GB | Jupyter+SSH 镜像（叠加 notebook、jupyterlab、openssh-server、supervisor） |
+| `caffe-cpu:origin-runtime` | ~3.36GB | 基础运行时镜像 |
+| `caffe-cpu:origin-jupyter` | ~3.8-4.0GB | Jupyter+SSH 镜像（叠加 notebook、jupyterlab、openssh-server、supervisor） |
+
+## 独立镜像分发
+
+本方案支持将构建好的 Docker 镜像打包为独立分发包，直接分发给最终用户使用，无需用户重新编译。
+
+### 开发镜像 vs 独立镜像
+
+| 类型 | 脚本 | 挂载宿主机目录 | 用途 |
+|------|------|---------------|------|
+| 开发镜像 | `run.sh` / `run-jupyter.sh` | 是（挂载源码目录） | 本地开发、源码调试、修改后重新编译 |
+| 独立镜像 | `run-standalone.sh` | 否（完全自包含） | 分发给最终用户、开箱即用、无需源码 |
+
+### 构建分发包流程
+
+```bash
+# 1. 构建两个镜像
+./build.sh --all
+
+# 2. 导出镜像到 dist/ 目录
+./export.sh
+
+# 3.（可选）压缩导出（减小体积）
+./export.sh --compress
+```
+
+### 分发包内容
+
+导出完成后，`dist/` 目录包含分发包所需文件：
+
+- `caffe-cpu-origin-runtime.tar` - 基础运行时镜像
+- `caffe-cpu-origin-jupyter.tar` - Jupyter+SSH 镜像
+- （可选）上述文件的 `.tar.gz` 压缩版本
+
+需随镜像一同分发的文件（位于当前目录）：
+
+- `run-standalone.sh` - 独立运行脚本
+- `load-and-verify.sh` - 镜像加载与验证脚本
+- `USER_GUIDE.md` - 面向最终用户的使用指南
+
+### 用户加载与验证流程
+
+最终用户收到分发包后，按以下步骤操作：
+
+```bash
+# 1. 加载镜像并验证
+./load-and-verify.sh
+
+# 2. 使用独立脚本运行（不挂载宿主机目录）
+./run-standalone.sh           # 基础镜像（交互式 bash）
+./run-standalone.sh --jupyter # Jupyter 镜像
+```
+
+详细使用说明请参考 [USER_GUIDE.md](USER_GUIDE.md)。
 
 ## 运行
 
@@ -150,7 +234,7 @@ USER_PASSWORD=mypassword JUPYTER_TOKEN=mytoken ./run-jupyter.sh start
 GRANT_SUDO=yes ./run-jupyter.sh start
 ```
 
-### 手动运行 Jupyter 容器
+### 手动运行 Jupyter 容器（开发用，挂载宿主机目录）
 
 ```bash
 docker run -d \
@@ -163,7 +247,7 @@ docker run -d \
   -e JUPYTER_TOKEN=mysecret \
   -e GRANT_SUDO=yes \
   --restart unless-stopped \
-  caffe-cpu:jupyter
+  caffe-cpu:origin-jupyter
 ```
 
 ### 容器内默认环境
@@ -176,7 +260,7 @@ docker run -d \
 | sudo 权限 | NOPASSWD | 通过 `GRANT_SUDO` 控制 |
 | 默认命令 | `/bin/bash` | supervisord（启动 SSH + Jupyter） |
 | 暴露端口 | 无 | 22（SSH）、8888（Jupyter） |
-| 健康检查 | 无 | 每 30 秒检查 SSH 和 Jupyter 状态 |
+| 健康检查 | 每 30 秒运行 healthcheck-caffe.sh | 每 30 秒检查 SSH 和 Jupyter 状态 |
 | 时区 | UTC | Asia/Shanghai |
 | 语言 | C.UTF-8 | zh_CN.UTF-8 |
 
@@ -261,7 +345,7 @@ tail -f /var/log/supervisor/sshd-stdout*.log
 | 进程管理 | 无 | supervisord | 无 |
 | 镜像大小 | ~3.36GB | ~3.8-4.0GB | ~5.5GB |
 | 时区/语言 | UTC/C.UTF-8 | Asia/Shanghai/zh_CN | 可配置 |
-| 健康检查 | 无 | 内置 | 无 |
+| 健康检查 | 内置（healthcheck-caffe.sh） | 内置 | 无 |
 | 适用场景 | 简化基线、CI、命令行 | 交互式开发、远程访问 | 完整方案、wheel 可 pip 安装 |
 
 ### 何时选择哪个镜像
@@ -324,7 +408,7 @@ tail -f /var/log/supervisor/sshd-stdout*.log
 **原因**：`run.sh` 将宿主机 `vendor/caffe/` 目录挂载到容器 `/workspace`，**覆盖**了镜像内已编译的产物。
 
 **解决**：
-- **验证镜像产物**：使用 `docker run --rm caffe-cpu:latest <command>`（不挂载宿主机目录）
+- **验证镜像产物**：使用 `./run-standalone.sh -- <command>` 或 `docker run --rm caffe-cpu:origin-runtime <command>`（不挂载宿主机目录）
 - **开发场景**：`run.sh` 的挂载行为是设计意图，需先在容器内执行 `make pycaffe` 重新编译
 
 ### Jupyter 镜像相关
@@ -387,7 +471,7 @@ tail -f /var/log/supervisor/sshd-stdout*.log
 - 进入容器安装（临时）：`docker exec -it caffe-jupyter pip install <package>`
 - 基于镜像创建新 Dockerfile（持久化）：
   ```dockerfile
-  FROM caffe-cpu:jupyter
+  FROM caffe-cpu:origin-jupyter
   RUN pip install <package1> <package2>
   ```
 - Jupyter Notebook 中使用 `!pip install <package>`（当前会话有效）
@@ -413,13 +497,18 @@ tail -f /var/log/supervisor/sshd-stdout*.log
 
 ## 相关文档
 
+- 用户使用指南：[USER_GUIDE.md](USER_GUIDE.md)
 - 基础镜像构建验证报告：[BUILD_REPORT.md](BUILD_REPORT.md)
 - 构建脚本说明：[build.sh](build.sh)（`./build.sh -h` 查看完整选项）
-- 基础运行脚本：[run.sh](run.sh)（`./run.sh -h` 查看完整选项）
-- Jupyter 管理脚本：[run-jupyter.sh](run-jupyter.sh)（`./run-jupyter.sh help` 查看完整选项）
+- 基础运行脚本（开发用）：[run.sh](run.sh)（`./run.sh -h` 查看完整选项）
+- Jupyter 管理脚本（开发用）：[run-jupyter.sh](run-jupyter.sh)（`./run-jupyter.sh help` 查看完整选项）
 - Jupyter 入口脚本：[entrypoint-jupyter.sh](entrypoint-jupyter.sh)
+- 镜像导出脚本：[export.sh](export.sh)
+- 镜像加载与验证脚本：[load-and-verify.sh](load-and-verify.sh)
+- 独立运行脚本（分发用）：[run-standalone.sh](run-standalone.sh)
 - Makefile.config 生成：[scripts/generate-makefile-config.sh](scripts/generate-makefile-config.sh)
 - Caffe 验证脚本：[scripts/verify-caffe.sh](scripts/verify-caffe.sh)
+- Runtime 健康检查：[scripts/healthcheck-caffe.sh](scripts/healthcheck-caffe.sh)
 - Jupyter 健康检查：[scripts/healthcheck-jupyter.sh](scripts/healthcheck-jupyter.sh)
 - SSH 配置：[config/sshd_config](config/sshd_config)
 - Supervisord 配置：[config/supervisord.conf](config/supervisord.conf)

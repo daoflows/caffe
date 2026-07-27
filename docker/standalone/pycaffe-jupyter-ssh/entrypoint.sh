@@ -234,6 +234,10 @@ print_access_info() {
 print_banner
 
 # Source profile scripts to ensure correct environment (LD_LIBRARY_PATH, etc.)
+# Temporarily disable nounset (-u) because system profile scripts (e.g. debuginfod.sh)
+# may reference unset variables like $DEBUGINFOD_URLS, which would otherwise
+# cause the shell to exit immediately under set -u.
+set +u
 if [ -f /etc/profile.d/pycaffe.sh ]; then
     . /etc/profile.d/pycaffe.sh
 fi
@@ -244,6 +248,7 @@ if [ -d /etc/profile.d ]; then
         fi
     done
 fi
+set -u
 
 if [ $# -gt 0 ]; then
     log_info "Command mode detected: '$*' - skipping service startup, exec user command directly"

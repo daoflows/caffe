@@ -3,7 +3,7 @@
 # Builds the pycaffe wheel using scikit-build-core + CMake + Ninja
 #
 # Prerequisites:
-#   - conda environment with Python 3.9+
+#   - Python 3.14+
 #   - Caffe C++ library installed (libcaffe.so)
 #   - Boost.Python, protobuf, glog, gflags installed
 #

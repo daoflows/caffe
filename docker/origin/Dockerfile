@@ -230,7 +230,8 @@ COPY --from=builder ${WORKSPACE_DIR}/caffex/python ${WORKSPACE_DIR}/caffex/pytho
 COPY --from=builder ${WORKSPACE_DIR}/caffex/distribute ${WORKSPACE_DIR}/caffex/distribute
 COPY --from=builder ${WORKSPACE_DIR}/caffex/Makefile.config ${WORKSPACE_DIR}/caffex/Makefile.config
 COPY docker/origin/scripts/verify-caffe.sh /usr/local/bin/verify-caffe.sh
-RUN chmod +x /usr/local/bin/verify-caffe.sh
+COPY docker/origin/scripts/healthcheck-caffe.sh /usr/local/bin/healthcheck-caffe.sh
+RUN chmod +x /usr/local/bin/verify-caffe.sh /usr/local/bin/healthcheck-caffe.sh
 
 # 创建 libcaffe.so 符号链接（运行时链接 _caffe.so 需要）
 RUN set -eux; \
@@ -245,5 +246,8 @@ RUN set -eux; \
 
 USER ${BUILDER_USER}
 WORKDIR ${WORKSPACE_DIR}
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck-caffe.sh
 
 CMD ["/bin/bash"]

@@ -45,16 +45,21 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
 # 默认值
 # ------------------------------------------------------------------------------
 DEFAULT_IMAGE_NAME="caffe-cpu"
-DEFAULT_TAG="latest"
-DEFAULT_DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
-DEFAULT_TARGET="runtime"
+DEFAULT_RUNTIME_TAG="origin-runtime"
+DEFAULT_JUPYTER_TAG="origin-jupyter"
+DEFAULT_RUNTIME_DOCKERFILE="${SCRIPT_DIR}/Dockerfile"
+DEFAULT_JUPYTER_DOCKERFILE="${SCRIPT_DIR}/Dockerfile.jupyter-ssh"
+DEFAULT_RUNTIME_TARGET="runtime"
+DEFAULT_JUPYTER_TARGET="runtime-jupyter"
 
 IMAGE_NAME="${DEFAULT_IMAGE_NAME}"
-TAG="${DEFAULT_TAG}"
-DOCKERFILE="${DEFAULT_DOCKERFILE}"
-TARGET="${DEFAULT_TARGET}"
+CUSTOM_TAG=""
+CUSTOM_DOCKERFILE=""
+CUSTOM_TARGET=""
 NO_CACHE=""
 BUILD_ARGS=()
+BUILD_RUNTIME=true
+BUILD_JUPYTER=false
 
 show_help() {
     cat <<EOF
@@ -62,18 +67,40 @@ show_help() {
 
 构建 Caffe Docker 镜像 (origin)
 
+镜像类型:
+  (默认)              构建基础运行时镜像 (${DEFAULT_IMAGE_NAME}:${DEFAULT_RUNTIME_TAG})
+  --jupyter           构建 Jupyter+SSH 镜像 (${DEFAULT_IMAGE_NAME}:${DEFAULT_JUPYTER_TAG})
+  --all               构建所有镜像 (先 runtime，再 jupyter)
+
 选项:
-  -t TAG              指定镜像标签 (默认: ${DEFAULT_TAG})
-  -f DOCKERFILE       指定 Dockerfile 路径 (默认: Dockerfile)
-  --target TARGET     指定构建目标阶段 (默认: ${DEFAULT_TARGET})
+  -t TAG              指定镜像标签 (覆盖默认标签)
+  -f DOCKERFILE       指定 Dockerfile 路径 (覆盖默认 Dockerfile)
+  --target TARGET     指定构建目标阶段 (覆盖默认目标阶段)
   --no-cache          无缓存构建
   --build-arg KEY=VAL 传递构建参数 (可多次使用)
   -h, --help          显示此帮助信息
 
+镜像说明:
+  origin-runtime      基础运行时镜像，仅包含 Caffe CPU 运行环境
+                      - Dockerfile: Dockerfile
+                      - 目标阶段: runtime
+                      - 用途: 命令行运行、脚本执行、开发环境
+
+  origin-jupyter      Jupyter+SSH 完整镜像，在 runtime 基础上增加:
+                      - Jupyter Notebook/Lab (端口 8888)
+                      - SSH 服务 (端口 22)
+                      - Supervisord 进程管理
+                      - 中文 locale 和时区配置
+                      - Dockerfile: Dockerfile.jupyter-ssh
+                      - 目标阶段: runtime-jupyter
+                      - 用途: 交互式开发、远程访问、Notebook 环境
+
 示例:
-  $(basename "$0")                           # 使用默认参数构建 runtime
-  $(basename "$0") -t v1.0                   # 构建标签为 v1.0 的镜像
-  $(basename "$0") --target runtime          # 构建 runtime 运行时镜像
+  $(basename "$0")                           # 构建 origin-runtime 镜像
+  $(basename "$0") --jupyter                 # 构建 origin-jupyter 镜像
+  $(basename "$0") --all                     # 构建所有镜像
+  $(basename "$0") -t v1.0                   # 构建标签为 v1.0 的 runtime 镜像
+  $(basename "$0") --jupyter -t my-jupyter   # 构建自定义标签的 jupyter 镜像
   $(basename "$0") --no-cache                # 无缓存构建
   $(basename "$0") --build-arg BUILDER_UID=1001  # 传递构建参数
 EOF
@@ -88,12 +115,22 @@ while [[ $# -gt 0 ]]; do
             show_help
             exit 0
             ;;
+        --jupyter)
+            BUILD_RUNTIME=false
+            BUILD_JUPYTER=true
+            shift
+            ;;
+        --all)
+            BUILD_RUNTIME=true
+            BUILD_JUPYTER=true
+            shift
+            ;;
         -t)
             if [[ -z "${2:-}" ]]; then
                 log_error "-t 需要指定标签参数"
                 exit 1
             fi
-            TAG="$2"
+            CUSTOM_TAG="$2"
             shift 2
             ;;
         -f)
@@ -101,7 +138,7 @@ while [[ $# -gt 0 ]]; do
                 log_error "-f 需要指定 Dockerfile 路径"
                 exit 1
             fi
-            DOCKERFILE="$2"
+            CUSTOM_DOCKERFILE="$2"
             shift 2
             ;;
         --target)
@@ -109,7 +146,7 @@ while [[ $# -gt 0 ]]; do
                 log_error "--target 需要指定构建目标阶段"
                 exit 1
             fi
-            TARGET="$2"
+            CUSTOM_TARGET="$2"
             shift 2
             ;;
         --no-cache)
@@ -132,131 +169,126 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-IMAGE_SPEC="${IMAGE_NAME}:${TAG}"
-
 # ------------------------------------------------------------------------------
-# 前置检查
+# 构建单个镜像的函数
 # ------------------------------------------------------------------------------
-log_header "Caffe Docker 镜像构建 (origin)"
+build_image() {
+    local build_type="$1"
+    local dockerfile="$2"
+    local target="$3"
+    local tag="$4"
+    local image_spec="${IMAGE_NAME}:${tag}"
 
-log_section "环境检查"
-CONTAINER_TOOL=$(detect_container_tool)
-if [[ -z "${CONTAINER_TOOL}" ]]; then
-    log_error "未找到 docker 或 wslc 命令"
-    log_troubleshoot <<'EOF'
+    log_header "构建 ${build_type} 镜像"
+
+    log_section "环境检查"
+    local CONTAINER_TOOL
+    CONTAINER_TOOL=$(detect_container_tool)
+    if [[ -z "${CONTAINER_TOOL}" ]]; then
+        log_error "未找到 docker 或 wslc 命令"
+        log_troubleshoot <<'EOF'
 1. 安装 Docker Desktop 并启用 WSL2 后端
 2. 确认 docker --version 可以运行
 3. Windows 环境推荐使用 Docker Desktop + WSL2 后端
 EOF
-    exit 1
-fi
-log_success "容器工具: ${CONTAINER_TOOL}"
+        return 1
+    fi
+    log_success "容器工具: ${CONTAINER_TOOL}"
 
-if [[ "${CONTAINER_TOOL}" == "docker" ]]; then
-    if ! docker info &>/dev/null; then
-        log_error "Docker 已安装但未运行"
-        log_troubleshoot <<'EOF'
+    if [[ "${CONTAINER_TOOL}" == "docker" ]]; then
+        if ! docker info &>/dev/null; then
+            log_error "Docker 已安装但未运行"
+            log_troubleshoot <<'EOF'
 1. 启动 Docker Desktop
 2. 等待 Docker 服务就绪 (系统托盘图标变绿)
 3. 运行 docker info 验证
 EOF
-        exit 1
-    fi
-    log_success "Docker 服务运行中"
-fi
-
-if [[ ! -f "${DOCKERFILE}" ]]; then
-    log_error "Dockerfile 不存在: ${DOCKERFILE}"
-    exit 1
-fi
-log_success "Dockerfile: ${DOCKERFILE}"
-
-if [[ ! -d "${PROJECT_DIR}/caffex" ]]; then
-    log_error "Caffe 源码目录不存在: ${PROJECT_DIR}/caffex"
-    log_info "请确认在正确的目录下运行此脚本"
-    exit 1
-fi
-log_success "Caffe 源码: ${PROJECT_DIR}/caffex"
-
-# ------------------------------------------------------------------------------
-# 构建配置
-# ------------------------------------------------------------------------------
-log_section "构建配置"
-log_kv "项目根目录" "${PROJECT_DIR}"
-log_kv "Dockerfile" "${DOCKERFILE}"
-log_kv "目标阶段" "${TARGET}"
-log_kv "镜像标签" "${IMAGE_SPEC}"
-log_kv "容器工具" "${CONTAINER_TOOL}"
-log_kv "无缓存构建" "$([[ -n "${NO_CACHE}" ]] && echo "是" || echo "否")"
-if [[ ${#BUILD_ARGS[@]} -gt 0 ]]; then
-    log_info "构建参数:"
-    i=0
-    while [[ $i -lt ${#BUILD_ARGS[@]} ]]; do
-        if [[ "${BUILD_ARGS[$i]}" == "--build-arg" ]]; then
-            log_info "  - ${BUILD_ARGS[$((i+1))]}"
+            return 1
         fi
-        i=$((i+1))
-    done
-fi
-log_blank
-
-# ------------------------------------------------------------------------------
-# 执行构建
-# ------------------------------------------------------------------------------
-log_section "构建阶段"
-log_warn "首次构建可能需要 15-40 分钟，请耐心等待..."
-log_info "如果构建失败，请向上滚动查看第一个 error 行"
-log_blank
-
-BUILD_START_TS=$(date +%s)
-
-set +e
-${CONTAINER_TOOL} build \
-    --target "${TARGET}" \
-    -t "${IMAGE_SPEC}" \
-    -f "${DOCKERFILE}" \
-    ${NO_CACHE} \
-    "${BUILD_ARGS[@]}" \
-    "${PROJECT_DIR}"
-BUILD_EXIT_CODE=$?
-set -e
-
-BUILD_END_TS=$(date +%s)
-BUILD_DURATION=$((BUILD_END_TS - BUILD_START_TS))
-BUILD_MINUTES=$((BUILD_DURATION / 60))
-BUILD_SECONDS=$((BUILD_DURATION % 60))
-
-log_blank
-
-# ------------------------------------------------------------------------------
-# 构建结果
-# ------------------------------------------------------------------------------
-if [[ ${BUILD_EXIT_CODE} -eq 0 ]]; then
-    log_header "构建成功"
-    log_kv "镜像标签" "${IMAGE_SPEC}"
-    log_kv "构建耗时" "${BUILD_MINUTES}分${BUILD_SECONDS}秒"
-    log_blank
-
-    IMAGE_SIZE=$(${CONTAINER_TOOL} image inspect "${IMAGE_SPEC}" --format='{{.Size}}' 2>/dev/null || echo "0")
-    if [[ "${IMAGE_SIZE}" != "0" ]]; then
-        IMAGE_SIZE_MB=$((IMAGE_SIZE / 1024 / 1024))
-        log_kv "镜像大小" "${IMAGE_SIZE_MB} MB"
+        log_success "Docker 服务运行中"
     fi
 
-    log_blank
-    log_section "下一步操作"
-    log_info "  启动开发容器:   ./run.sh"
-    log_info "  导出镜像:       docker save ${IMAGE_SPEC} -o caffe-cpu.tar"
-    log_info "  查看镜像详情:   ${CONTAINER_TOOL} image inspect ${IMAGE_SPEC}"
-    log_blank
-    log_success "🎉 镜像构建完成！"
-else
-    log_header "构建失败"
-    log_error "镜像构建失败，退出码: ${BUILD_EXIT_CODE}"
-    log_kv "构建耗时" "${BUILD_MINUTES}分${BUILD_SECONDS}秒"
+    if [[ ! -f "${dockerfile}" ]]; then
+        log_error "Dockerfile 不存在: ${dockerfile}"
+        return 1
+    fi
+    log_success "Dockerfile: ${dockerfile}"
+
+    if [[ ! -d "${PROJECT_DIR}/caffex" ]]; then
+        log_error "Caffe 源码目录不存在: ${PROJECT_DIR}/caffex"
+        log_info "请确认在正确的目录下运行此脚本"
+        return 1
+    fi
+    log_success "Caffe 源码: ${PROJECT_DIR}/caffex"
+
+    log_section "构建配置"
+    log_kv "项目根目录" "${PROJECT_DIR}"
+    log_kv "镜像类型" "${build_type}"
+    log_kv "Dockerfile" "${dockerfile}"
+    log_kv "目标阶段" "${target}"
+    log_kv "镜像标签" "${image_spec}"
+    log_kv "容器工具" "${CONTAINER_TOOL}"
+    log_kv "无缓存构建" "$([[ -n "${NO_CACHE}" ]] && echo "是" || echo "否")"
+    if [[ ${#BUILD_ARGS[@]} -gt 0 ]]; then
+        log_info "构建参数:"
+        local i=0
+        while [[ $i -lt ${#BUILD_ARGS[@]} ]]; do
+            if [[ "${BUILD_ARGS[$i]}" == "--build-arg" ]]; then
+                log_info "  - ${BUILD_ARGS[$((i+1))]}"
+            fi
+            i=$((i+1))
+        done
+    fi
     log_blank
 
-    log_troubleshoot <<'EOF'
+    log_section "构建阶段"
+    log_warn "首次构建可能需要 15-40 分钟，请耐心等待..."
+    log_info "如果构建失败，请向上滚动查看第一个 error 行"
+    log_blank
+
+    local BUILD_START_TS BUILD_END_TS BUILD_DURATION BUILD_MINUTES BUILD_SECONDS BUILD_EXIT_CODE
+    BUILD_START_TS=$(date +%s)
+
+    set +e
+    ${CONTAINER_TOOL} build \
+        --target "${target}" \
+        -t "${image_spec}" \
+        -f "${dockerfile}" \
+        ${NO_CACHE} \
+        "${BUILD_ARGS[@]}" \
+        "${PROJECT_DIR}"
+    BUILD_EXIT_CODE=$?
+    set -e
+
+    BUILD_END_TS=$(date +%s)
+    BUILD_DURATION=$((BUILD_END_TS - BUILD_START_TS))
+    BUILD_MINUTES=$((BUILD_DURATION / 60))
+    BUILD_SECONDS=$((BUILD_DURATION % 60))
+
+    log_blank
+
+    if [[ ${BUILD_EXIT_CODE} -eq 0 ]]; then
+        log_header "构建成功: ${build_type}"
+        log_kv "镜像标签" "${image_spec}"
+        log_kv "构建耗时" "${BUILD_MINUTES}分${BUILD_SECONDS}秒"
+        log_blank
+
+        local IMAGE_SIZE IMAGE_SIZE_MB
+        IMAGE_SIZE=$(${CONTAINER_TOOL} image inspect "${image_spec}" --format='{{.Size}}' 2>/dev/null || echo "0")
+        if [[ "${IMAGE_SIZE}" != "0" ]]; then
+            IMAGE_SIZE_MB=$((IMAGE_SIZE / 1024 / 1024))
+            log_kv "镜像大小" "${IMAGE_SIZE_MB} MB"
+        fi
+
+        log_blank
+        return 0
+    else
+        log_header "构建失败: ${build_type}"
+        log_error "镜像构建失败，退出码: ${BUILD_EXIT_CODE}"
+        log_kv "构建耗时" "${BUILD_MINUTES}分${BUILD_SECONDS}秒"
+        log_blank
+
+        log_troubleshoot <<'EOF'
 常见构建失败原因及解决方案:
 
 1. 网络问题 (包下载失败)
@@ -283,5 +315,114 @@ else
    → 手动执行带 --progress=plain 的 docker build 命令查看完整输出
    → 向上滚动找到第一个红色 error: 行
 EOF
-    exit ${BUILD_EXIT_CODE}
+        return ${BUILD_EXIT_CODE}
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# 主流程
+# ------------------------------------------------------------------------------
+log_header "Caffe Docker 镜像构建 (origin)"
+
+RUNTIME_DOCKERFILE="${DEFAULT_RUNTIME_DOCKERFILE}"
+RUNTIME_TARGET="${DEFAULT_RUNTIME_TARGET}"
+RUNTIME_TAG="${DEFAULT_RUNTIME_TAG}"
+
+JUPYTER_DOCKERFILE="${DEFAULT_JUPYTER_DOCKERFILE}"
+JUPYTER_TARGET="${DEFAULT_JUPYTER_TARGET}"
+JUPYTER_TAG="${DEFAULT_JUPYTER_TAG}"
+
+if [[ -n "${CUSTOM_DOCKERFILE}" ]]; then
+    RUNTIME_DOCKERFILE="${CUSTOM_DOCKERFILE}"
+    JUPYTER_DOCKERFILE="${CUSTOM_DOCKERFILE}"
+fi
+
+if [[ -n "${CUSTOM_TARGET}" ]]; then
+    RUNTIME_TARGET="${CUSTOM_TARGET}"
+    JUPYTER_TARGET="${CUSTOM_TARGET}"
+fi
+
+if [[ -n "${CUSTOM_TAG}" ]]; then
+    RUNTIME_TAG="${CUSTOM_TAG}"
+    JUPYTER_TAG="${CUSTOM_TAG}"
+fi
+
+BUILD_START_TS=$(date +%s)
+RUNTIME_SUCCESS=false
+JUPYTER_SUCCESS=false
+RUNTIME_EXIT_CODE=0
+JUPYTER_EXIT_CODE=0
+
+if [[ "${BUILD_RUNTIME}" == "true" ]]; then
+    if build_image "origin-runtime (基础运行时)" "${RUNTIME_DOCKERFILE}" "${RUNTIME_TARGET}" "${RUNTIME_TAG}"; then
+        RUNTIME_SUCCESS=true
+    else
+        RUNTIME_EXIT_CODE=$?
+    fi
+fi
+
+if [[ "${BUILD_JUPYTER}" == "true" ]]; then
+    if [[ "${RUNTIME_SUCCESS}" == "true" ]] || [[ "${BUILD_RUNTIME}" == "false" ]]; then
+        if build_image "origin-jupyter (Jupyter+SSH)" "${JUPYTER_DOCKERFILE}" "${JUPYTER_TARGET}" "${JUPYTER_TAG}"; then
+            JUPYTER_SUCCESS=true
+        else
+            JUPYTER_EXIT_CODE=$?
+        fi
+    else
+        log_warn "跳过 Jupyter 镜像构建（runtime 构建失败）"
+    fi
+fi
+
+BUILD_END_TS=$(date +%s)
+BUILD_DURATION=$((BUILD_END_TS - BUILD_START_TS))
+BUILD_MINUTES=$((BUILD_DURATION / 60))
+BUILD_SECONDS=$((BUILD_DURATION % 60))
+
+log_blank
+log_header "构建汇总"
+log_kv "总耗时" "${BUILD_MINUTES}分${BUILD_SECONDS}秒"
+log_blank
+
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+
+if [[ "${BUILD_RUNTIME}" == "true" ]]; then
+    if [[ "${RUNTIME_SUCCESS}" == "true" ]]; then
+        log_success "✓ origin-runtime: ${IMAGE_NAME}:${RUNTIME_TAG}"
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    else
+        log_error "✗ origin-runtime: 构建失败 (退出码: ${RUNTIME_EXIT_CODE})"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+fi
+
+if [[ "${BUILD_JUPYTER}" == "true" ]]; then
+    if [[ "${JUPYTER_SUCCESS}" == "true" ]]; then
+        log_success "✓ origin-jupyter: ${IMAGE_NAME}:${JUPYTER_TAG}"
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    else
+        log_error "✗ origin-jupyter: 构建失败 (退出码: ${JUPYTER_EXIT_CODE})"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+    fi
+fi
+
+log_blank
+
+if [[ ${FAIL_COUNT} -eq 0 ]]; then
+    log_section "下一步操作"
+    if [[ "${RUNTIME_SUCCESS}" == "true" ]]; then
+        log_info "  启动 runtime 容器:  ./run.sh"
+    fi
+    if [[ "${JUPYTER_SUCCESS}" == "true" ]]; then
+        log_info "  启动 Jupyter 容器:  ./run-jupyter.sh"
+    fi
+    log_info "  导出 runtime 镜像:  docker save ${IMAGE_NAME}:${RUNTIME_TAG} -o caffe-cpu-runtime.tar"
+    if [[ "${JUPYTER_SUCCESS}" == "true" ]]; then
+        log_info "  导出 Jupyter 镜像:  docker save ${IMAGE_NAME}:${JUPYTER_TAG} -o caffe-cpu-jupyter.tar"
+    fi
+    log_blank
+    log_success "🎉 镜像构建完成！成功: ${SUCCESS_COUNT} 个"
+else
+    log_error "❌ 构建完成，但有 ${FAIL_COUNT} 个镜像失败"
+    exit 1
 fi
