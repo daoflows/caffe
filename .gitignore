@@ -172,3 +172,6 @@ CMakeUserPresets.json
 
 # caffe_pb2
 ./caffe-slim/caffe_pb2.py
+
+# workspace demo files
+workspace/

@@ -1,0 +1,150 @@
+#!/bin/bash
+set -uo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+PASS=0
+FAIL=0
+SKIP=0
+
+pass() { echo -e "  ${GREEN}[PASS]${NC} $*"; PASS=$((PASS+1)); }
+fail() { echo -e "  ${RED}[FAIL]${NC} $*"; FAIL=$((FAIL+1)); }
+skip() { echo -e "  ${YELLOW}[SKIP]${NC} $*"; SKIP=$((SKIP+1)); }
+info() { echo -e "  [INFO] $*"; }
+
+echo ""
+echo "============================================================"
+echo "  PyCaffe Customer Image - Self-Verification"
+echo "============================================================"
+echo ""
+
+# ---- Check 1: pycaffe import ----
+echo "[1/7] Checking pycaffe import..."
+if python -c "import pycaffe" 2>/dev/null; then
+    pass "pycaffe import successful"
+else
+    fail "pycaffe import FAILED"
+fi
+
+# ---- Check 2: pycaffe version ----
+echo "[2/7] Checking pycaffe version..."
+VER=$(python -c "import pycaffe; print(pycaffe.__version__)" 2>/dev/null || echo "")
+if [ -n "$VER" ] && [ "$VER" != "" ]; then
+    pass "pycaffe version: $VER"
+else
+    fail "Could not determine pycaffe version"
+fi
+
+# ---- Check 3: caffe.Net class ----
+echo "[3/7] Checking caffe.Net class..."
+if python -c "import pycaffe; n=pycaffe.Net" 2>/dev/null; then
+    pass "pycaffe.Net class is available"
+else
+    fail "pycaffe.Net class is NOT available"
+fi
+
+# ---- Check 4: LeNet forward ----
+echo "[4/7] Running LeNet inference smoke test..."
+LENET_PROTOTXT="/workspace/pycaffe-examples/lenet_deploy.prototxt"
+if [ -f "$LENET_PROTOTXT" ]; then
+    if python -c "
+import pycaffe
+import numpy as np
+import warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+
+net = pycaffe.Net('$LENET_PROTOTXT', pycaffe.TEST)
+input_shape = net.blobs['data'].shape
+print(f'  Input blob shape: {input_shape}')
+input_data = np.random.rand(*input_shape).astype(np.float32)
+net.blobs['data'].data[...] = input_data
+out = net.forward()
+if out is not None and len(out) > 0:
+    print('  Forward pass OK, output keys:', list(out.keys()))
+else:
+    prob = net.blobs['prob'].data
+    print(f'  Forward pass OK, prob shape: {prob.shape}')
+print('  LeNet inference successful')
+" 2>&1; then
+        pass "LeNet forward pass successful"
+    else
+        fail "LeNet forward pass FAILED"
+    fi
+else
+    skip "LeNet prototxt not found at $LENET_PROTOTXT"
+fi
+
+# ---- Check 5: Jupyter port ----
+echo "[5/7] Checking Jupyter service..."
+JUPYTER_PORT="${JUPYTER_PORT:-8888}"
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${JUPYTER_PORT}/api" 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+    pass "Jupyter is responding on port ${JUPYTER_PORT} (HTTP ${HTTP_CODE})"
+else
+    if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${JUPYTER_PORT}" 2>/dev/null; then
+        pass "Jupyter port ${JUPYTER_PORT} is open (HTTP ${HTTP_CODE})"
+    else
+        skip "Jupyter not responding (may not be running in this context; HTTP ${HTTP_CODE})"
+    fi
+fi
+
+# ---- Check 6: SSH port ----
+echo "[6/7] Checking SSH service..."
+SSH_PORT="${SSH_PORT:-22}"
+if [ "${DISABLE_SSH:-no}" = "yes" ] || [ "${DISABLE_SSH:-no}" = "1" ] || [ "${DISABLE_SSH:-no}" = "true" ]; then
+    skip "SSH disabled by DISABLE_SSH env var"
+else
+    if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/${SSH_PORT}" 2>/dev/null; then
+        pass "SSH is listening on port ${SSH_PORT}"
+    else
+        skip "SSH not responding (may not be running in this context)"
+    fi
+fi
+
+# ---- Check 7: ResNet50 demo ----
+echo "[7/7] Checking ResNet50 demo..."
+RESNET_DIR="/opt/caffe-examples/resnet50"
+INFER_SCRIPT="/opt/caffe-examples/infer.py"
+if [ -d "$RESNET_DIR" ] && [ -f "$INFER_SCRIPT" ]; then
+    if [ -f "${RESNET_DIR}/ResNet-50-deploy.prototxt" ] && [ -f "${RESNET_DIR}/ResNet-50-model.caffemodel" ] && [ -f "${RESNET_DIR}/data/demo.png" ]; then
+        info "ResNet50 demo files found. Running inference..."
+        if python "$INFER_SCRIPT" 2>&1 | tail -20; then
+            pass "ResNet50 inference completed successfully"
+        else
+            fail "ResNet50 inference FAILED"
+        fi
+    else
+        fail "ResNet50 model files incomplete in ${RESNET_DIR}"
+    fi
+else
+    fail "ResNet50 demo files not found (dir: ${RESNET_DIR}, script: ${INFER_SCRIPT})"
+fi
+
+echo ""
+echo "============================================================"
+echo -e "  Results: ${GREEN}${PASS} PASS${NC}, ${RED}${FAIL} FAIL${NC}, ${YELLOW}${SKIP} SKIP${NC}"
+echo "============================================================"
+echo ""
+
+if [ "$FAIL" -gt 0 ]; then
+    echo -e "${RED}Some checks FAILED. Please review the output above.${NC}"
+    exit 1
+fi
+
+if [ "$PASS" -ge 4 ]; then
+    echo -e "${GREEN}Core verification PASSED. PyCaffe is ready to use.${NC}"
+else
+    echo -e "${YELLOW}Some checks were skipped. Ensure services are running for full verification.${NC}"
+fi
+
+echo ""
+echo "Quick start commands:"
+echo "  - Jupyter:  http://localhost:${JUPYTER_PORT}/"
+echo "  - SSH:      ssh builder@localhost -p <mapped-port>"
+echo "  - Examples: /opt/caffe-examples/resnet50/"
+echo ""
+
+exit 0

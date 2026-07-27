@@ -1,0 +1,19 @@
+FROM caffe-cpu:jupyter
+
+LABEL version="1.0.0"
+LABEL description="Caffe-Jupyter-with-forward-pass-notebook-self-contained"
+LABEL built="2026-07-27"
+
+ENV USER_PASSWORD=caffepass
+ENV JUPYTER_TOKEN=caffe-notebook-2026
+ENV GRANT_SUDO=yes
+
+COPY 01_caffe_forward_pass.ipynb /opt/caffe-examples/01_caffe_forward_pass.ipynb
+
+RUN chmod 644 /opt/caffe-examples/01_caffe_forward_pass.ipynb
+
+COPY docker/origin/entrypoint-customer.sh /usr/local/bin/entrypoint-customer.sh
+RUN chmod +x /usr/local/bin/entrypoint-customer.sh
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint-customer.sh"]
+CMD []

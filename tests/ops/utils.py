@@ -1,0 +1,220 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+import os
+import logging
+import numpy as np
+from google.protobuf import text_format
+import caffe
+from caffe import layers as L, params as P
+from caffe.proto import caffe_pb2 as pb
+
+os.environ["GLOG_minloglevel"] = "2"
+
+_log_level = os.environ.get("CAFFE_LOG_LEVEL", "WARNING").upper()
+logging.basicConfig(
+    level=getattr(logging, _log_level, logging.WARNING),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+def _create_dir(d_path):
+    """If the directory is not existed, create it"""
+    logger.debug(f"Creating directory: {d_path}")
+    if not (os.path.exists(d_path) and os.path.isdir(d_path)):
+        os.makedirs(d_path)
+
+
+def _list_to_str(ll):
+    """Convert list or tuple to str, separated by underline."""
+    if isinstance(ll, (tuple, list)):
+        tmp = [str(i) for i in ll]
+        res = "_".join(tmp)
+    else:
+        res = str(ll)
+    return res
+
+
+def _gen_filename_str(op_name, data_shape, base_dir, *args, **kwargs):
+    """Combining the filename according to the op_name, shape and other args."""
+    file_dir = os.path.join(base_dir, op_name)
+    _create_dir(file_dir)
+    res = op_name + "_"
+    shape_str = _list_to_str(list(data_shape))
+    res += shape_str
+    for arg in args:
+        if isinstance(arg, (tuple, list)):
+            res += "_" + _list_to_str(arg)
+        elif isinstance(arg, (int, float, str)):
+            res += "_" + str(arg)
+    for _, v in kwargs.items():
+        if isinstance(v, (tuple, list)):
+            res += "_" + _list_to_str(v)
+        elif isinstance(v, (int, float, str)):
+            res += "_" + str(v)
+    res = res.replace(".", "_")
+    res = res.replace("-", "_")
+    proto_file = os.path.join(file_dir, res + ".prototxt")
+    blob_file = os.path.join(file_dir, res + ".caffemodel")
+    solver_file = os.path.join(file_dir, res + "_solver.prototxt")
+    logger.debug(f"Generated files - proto: {proto_file}, blob: {blob_file}, solver: {solver_file}")
+
+    return (proto_file, blob_file, solver_file)
+
+
+def _save_prototxt(n_netspec, f_path):
+    """Generate .prototxt file according to caffe.NetSpec"""
+    logger.debug(f"Saving prototxt to: {f_path}")
+    s = n_netspec.to_proto()
+    with open(f_path, "w") as f:
+        f.write(str(s))
+
+
+def _save_solver(solver_file, proto_file, blob_file):
+    """Define a solver proto, you can change the configs."""
+    logger.debug(f"Saving solver to: {solver_file}, proto: {proto_file}, blob: {blob_file}")
+    blob_file_prefix = blob_file.split(".caffemodel")[0]
+    s = pb.SolverParameter()
+    s.train_net = proto_file
+    s.base_lr = 0.01
+    s.momentum = 0.9
+    s.weight_decay = 0.0005
+    s.lr_policy = "inv"
+    s.gamma = 0.0001
+    s.power = 0.75
+    s.display = 1
+    s.max_iter = 100000
+    s.snapshot = 100000
+    s.snapshot_prefix = blob_file_prefix
+
+    with open(solver_file, "w") as f:
+        f.write(str(s))
+
+
+def _save_caffemodel(solver_file, blob_file):
+    """Generate .caffemodel file."""
+    logger.info(f"Saving caffemodel to: {blob_file}")
+    solver = caffe.SGDSolver(solver_file)
+    solver.net.save(blob_file)
+
+
+def _gen_model_files(n_netspec, proto_file, blob_file, solver_file):
+    logger.info("Starting model files generation")
+    _save_prototxt(n_netspec, proto_file)
+    _save_solver(solver_file, proto_file, blob_file)
+    _save_caffemodel(solver_file, blob_file)
+
+
+def _siso_op(data, func, *args, **kwargs):
+    """Create single input and single output Caffe op"""
+    logger.debug(f"Creating SISO op, input shape: {data.shape}")
+    n = caffe.NetSpec()
+    n.data = L.Input(input_param={"shape": {"dim": list(data.shape)}})
+    n.output = func(n.data, *args, **kwargs)
+    return n
+
+
+def _miso_op(data_list, func, *args, **kwargs):
+    """Create multi input and single output Caffe op"""
+    input_shapes = [d.shape for d in data_list]
+    logger.debug(f"Creating MISO op, num inputs: {len(data_list)}, shapes: {input_shapes}")
+    n = caffe.NetSpec()
+    if not isinstance(data_list, (tuple, list)):
+        raise TypeError(f"Need tuple or list but get {type(data_list)}")
+    input_list = []
+    for idx, data in enumerate(data_list):
+        n["data" + str(idx)] = L.Input(input_param={"shape": {"dim": list(data.shape)}})
+        input_list.append(n["data" + str(idx)])
+    n.output = func(*input_list, *args, **kwargs)
+    return n
+
+
+def _simo_op(data, func, *args, **kwargs):
+    """Create single input and multi output Caffe op"""
+    logger.debug(f"Creating SIMO op, input shape: {data.shape}")
+    n = caffe.NetSpec()
+    n.data = L.Input(input_param={"shape": {"dim": list(data.shape)}})
+    output_list = func(n.data, *args, **kwargs)
+    logger.debug(f"SIMO op num outputs: {len(output_list)}")
+    for idx, out in enumerate(output_list):
+        n["output" + str(idx)] = out
+    return n
+
+
+def _run_caffe(data, proto_file, blob_file):
+    """Run caffe model by Caffe according to .caffemodel and .prototxt"""
+    logger.info(f"Starting Caffe inference, proto: {proto_file}, blob: {blob_file}")
+    try:
+        if isinstance(data, (list, tuple)):
+            input_shapes = [d.shape for d in data]
+            logger.debug(f"Input data is list, num inputs: {len(data)}, shapes: {input_shapes}")
+        else:
+            logger.debug(f"Input data shape: {data.shape}")
+        net = caffe.Net(proto_file, blob_file, caffe.TEST)
+        if isinstance(data, (list, tuple)):
+            for idx, d in enumerate(data):
+                net.blobs["data" + str(idx)].data[...] = d
+        else:
+            net.blobs["data"].data[...] = data
+        out = net.forward()
+
+        caffe_output = []
+        for i in range(len(out.keys())):
+            if "output" + str(i) not in out.keys():
+                caffe_output.clear()
+                result = list(out.values())
+                out_shapes = [v.shape for v in result]
+                logger.info(f"Caffe inference completed, output shapes: {out_shapes}")
+                return result
+            caffe_output.append(out["output" + str(i)])
+        out_shapes = [o.shape for o in caffe_output]
+        logger.info(f"Caffe inference completed, output shapes: {out_shapes}")
+        return caffe_output
+    except Exception as e:
+        logger.error(f"Error running Caffe inference: {e}", exc_info=True)
+        raise
+
+
+def _test_op(data, func_op, op_name, test_dir, **kwargs):
+    """Single op testing pipeline (Caffe-only, no TVM comparison)."""
+    logger.info(f"Testing operator: {op_name}")
+    logger.debug(f"Test parameters - test_dir: {test_dir}, kwargs: {kwargs}")
+    try:
+        shape_list = []
+        if isinstance(data, (list, tuple)):
+            n = _miso_op(data, func_op, **kwargs)
+            for d in data:
+                shape_list.extend(list(d.shape))
+        else:
+            output_num = 1
+            if "ntop" in kwargs:
+                output_num = kwargs["ntop"]
+            if output_num == 1:
+                n = _siso_op(data, func_op, **kwargs)
+            else:
+                n = _simo_op(data, func_op, **kwargs)
+            shape_list = list(data.shape)
+
+        (proto_file, blob_file, solver_file) = _gen_filename_str(op_name, shape_list, test_dir, **kwargs)
+        _gen_model_files(n, proto_file, blob_file, solver_file)
+        caffe_out = _run_caffe(data, proto_file, blob_file)
+        logger.info(f"Testing operator {op_name} completed")
+        return caffe_out
+    except Exception as e:
+        logger.error(f"Error testing operator {op_name}: {e}", exc_info=True)
+        raise

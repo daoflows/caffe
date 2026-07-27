@@ -1,0 +1,10 @@
+FROM caffe-cpu:customer
+
+USER root
+
+COPY caffe/workspace/ /workspace/user-data/
+
+RUN chown -R builder:builder /workspace/user-data
+
+USER builder
+WORKDIR /workspace
