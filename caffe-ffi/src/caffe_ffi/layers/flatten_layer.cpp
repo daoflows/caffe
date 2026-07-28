@@ -6,12 +6,13 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 
 namespace caffe_ffi {
 
 void FlattenLayer::Reshape(const std::vector<Blob*>& bottom,
                             const std::vector<Blob*>& top) {
-  TVM_FFI_ICHECK_NE(top[0], bottom[0]) << this->type() << " Layer does not allow in-place.";
+  CAFFE_FFI_CHECK_VALUE_NE(top[0], bottom[0]) << this->type() << " Layer does not allow in-place.";
   const int start_axis = bottom[0]->CanonicalAxisIndex(
       this->layer_param_.flatten_param().axis());
   int end_axis = bottom[0]->CanonicalAxisIndex(
@@ -26,7 +27,7 @@ void FlattenLayer::Reshape(const std::vector<Blob*>& bottom,
     top_shape.push_back(bottom[0]->shape(i));
   }
   top[0]->Reshape(top_shape);
-  TVM_FFI_ICHECK_EQ(top[0]->count(), bottom[0]->count());
+  CAFFE_FFI_CHECK_VALUE_EQ(top[0]->count(), bottom[0]->count());
 
   std::ostringstream bottom_shape_ss;
   for (int i = 0; i < bottom[0]->num_axes(); ++i) {

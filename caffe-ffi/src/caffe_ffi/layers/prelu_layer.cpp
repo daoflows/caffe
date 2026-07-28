@@ -10,6 +10,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -23,7 +24,7 @@ void PReLULayer::LayerSetUp(const std::vector<Blob*>& bottom,
 
   if (this->blobs_.size() > 0) {
     CAFFE_FFI_LAYER_LOG << "PReLU: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
-    TVM_FFI_ICHECK_EQ(this->blobs_.size(), 1U)
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_.size(), 1U)
         << "PReLU takes exactly one blob for slope.";
   } else {
     this->blobs_.resize(1);

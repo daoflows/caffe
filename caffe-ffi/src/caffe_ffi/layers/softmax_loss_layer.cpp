@@ -11,6 +11,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -49,14 +50,14 @@ void SoftmaxWithLossLayer::Reshape(const std::vector<Blob*>& bottom,
   CAFFE_FFI_TENSOR_LOG << "SoftmaxWithLoss: created prob_ blob shape=[" << prob_shape_ss.str() << "]";
 
   if (bottom.size() == 2) {
-    TVM_FFI_ICHECK_EQ(bottom[0]->num_axes(), bottom[1]->num_axes())
+    CAFFE_FFI_CHECK_VALUE_EQ(bottom[0]->num_axes(), bottom[1]->num_axes())
         << "Data and label must have same number of axes.";
     for (int i = 0; i < bottom[0]->num_axes(); ++i) {
       if (i == softmax_axis_) {
-        TVM_FFI_ICHECK_EQ(bottom[1]->shape(i), 1)
+        CAFFE_FFI_CHECK_VALUE_EQ(bottom[1]->shape(i), 1)
             << "Label channel dimension must be 1.";
       } else {
-        TVM_FFI_ICHECK_EQ(bottom[0]->shape(i), bottom[1]->shape(i))
+        CAFFE_FFI_CHECK_VALUE_EQ(bottom[0]->shape(i), bottom[1]->shape(i))
             << "Data and label dimensions mismatch at axis " << i;
       }
     }
@@ -168,8 +169,8 @@ void SoftmaxWithLossLayer::Forward_cpu(const std::vector<Blob*>& bottom,
         if (has_ignore_label_ && label_value == ignore_label_) {
           continue;
         }
-        TVM_FFI_ICHECK_GE(label_value, 0);
-        TVM_FFI_ICHECK_LT(label_value, channels);
+        CAFFE_FFI_CHECK_VALUE_GE(label_value, 0);
+        CAFFE_FFI_CHECK_VALUE_LT(label_value, channels);
         loss -= std::log(std::max(prob_data[i * dim + label_value * inner_num_ + j],
                                   std::numeric_limits<float>::min()));
         ++count;

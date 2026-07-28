@@ -8,6 +8,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -23,8 +24,8 @@ void ScaleLayer::LayerSetUp(const std::vector<Blob*>& bottom,
                       << " num_axes_=" << num_axes_
                       << " bias_term_=" << bias_term_;
 
-  TVM_FFI_ICHECK_GE(num_axes_, 1) << "num_axes should be >= 1";
-  TVM_FFI_ICHECK_LE(axis_ + num_axes_, bottom[0]->num_axes())
+  CAFFE_FFI_CHECK_VALUE_GE(num_axes_, 1) << "num_axes should be >= 1";
+  CAFFE_FFI_CHECK_VALUE_LE(axis_ + num_axes_, bottom[0]->num_axes())
       << "axis + num_axes exceeds blob dimensions";
 
   std::vector<int64_t> scale_shape;
@@ -43,12 +44,12 @@ void ScaleLayer::LayerSetUp(const std::vector<Blob*>& bottom,
 
   if (bottom.size() == 1 && this->blobs_.size() > 0) {
     CAFFE_FFI_LAYER_LOG << "Scale: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
-    TVM_FFI_ICHECK_GE(this->blobs_.size(), 1U);
+    CAFFE_FFI_CHECK_VALUE_GE(this->blobs_.size(), 1U);
     if (bias_term_) {
-      TVM_FFI_ICHECK_EQ(this->blobs_.size(), 2U);
-      TVM_FFI_ICHECK_EQ(this->blobs_[1]->count(), scale_dim);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_.size(), 2U);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[1]->count(), scale_dim);
     }
-    TVM_FFI_ICHECK_EQ(this->blobs_[0]->count(), scale_dim);
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->count(), scale_dim);
   } else if (bottom.size() == 1) {
     if (bias_term_) {
       this->blobs_.resize(2);

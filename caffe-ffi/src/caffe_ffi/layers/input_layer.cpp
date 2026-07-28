@@ -5,6 +5,7 @@
 
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe/proto/caffe.pb.h"
 
 namespace caffe_ffi {
@@ -14,7 +15,7 @@ void InputLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   const int num_top = static_cast<int>(top.size());
   const caffe::InputParameter& param = this->layer_param_.input_param();
   const int num_shape = param.shape_size();
-  TVM_FFI_ICHECK(num_shape == 0 || num_shape == 1 || num_shape == num_top)
+  CAFFE_FFI_CHECK_VALUE(num_shape == 0 || num_shape == 1 || num_shape == num_top)
       << "Must specify 'shape' once, once per top blob, or not at all: "
       << num_top << " tops vs. " << num_shape << " shapes.";
   if (num_shape > 0) {

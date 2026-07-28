@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <sstream>
 
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
 #include "caffe_ffi/backtrace.hpp"
@@ -140,7 +142,7 @@ Tensor Blob::diff_tensor() const {
 
 void Blob::Reshape(ShapeView shape) {
   for (size_t i = 0; i < shape.size(); ++i) {
-    TVM_FFI_ICHECK_GE(shape[i], 0)
+    CAFFE_FFI_CHECK_VALUE_GE(shape[i], 0)
         << "Blob#" << id_ << " Reshape: dimension " << i << " is negative (" << shape[i] << ")";
   }
   bool shape_changed = !data_tensor_.defined() || (shape.size() != static_cast<size_t>(data_tensor_.ndim()));
@@ -252,12 +254,12 @@ void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
   const int data_count = proto.data_size();
   const int double_data_count = proto.double_data_size();
   if (data_count > 0) {
-    TVM_FFI_ICHECK_EQ(data_count, count())
+    CAFFE_FFI_CHECK_RUNTIME_EQ(data_count, count())
         << "Incorrect data size for Blob: expected " << count() << ", got " << data_count;
     CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " copying " << data_count << " float data elements to " << data_ptr;
     std::copy(proto.data().begin(), proto.data().end(), data_ptr);
   } else if (double_data_count > 0) {
-    TVM_FFI_ICHECK_EQ(double_data_count, count())
+    CAFFE_FFI_CHECK_RUNTIME_EQ(double_data_count, count())
         << "Incorrect double_data size for Blob: expected " << count() << ", got " << double_data_count;
     CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " converting " << double_data_count << " double→float data elements";
     for (int i = 0; i < double_data_count; ++i) {
@@ -268,12 +270,12 @@ void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
   const int diff_count = proto.diff_size();
   const int double_diff_count = proto.double_diff_size();
   if (diff_count > 0) {
-    TVM_FFI_ICHECK_EQ(diff_count, count())
+    CAFFE_FFI_CHECK_RUNTIME_EQ(diff_count, count())
         << "Incorrect diff size for Blob: expected " << count() << ", got " << diff_count;
     CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " copying " << diff_count << " float diff elements to " << diff_ptr;
     std::copy(proto.diff().begin(), proto.diff().end(), diff_ptr);
   } else if (double_diff_count > 0) {
-    TVM_FFI_ICHECK_EQ(double_diff_count, count())
+    CAFFE_FFI_CHECK_RUNTIME_EQ(double_diff_count, count())
         << "Incorrect double_diff size for Blob: expected " << count() << ", got " << double_diff_count;
     CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " converting " << double_diff_count << " double→float diff elements";
     for (int i = 0; i < double_diff_count; ++i) {
@@ -328,15 +330,15 @@ Array<float> Blob::get_data() const {
 
 void Blob::set_data(Tensor data) {
   // Support DLPack zero-copy interop with numpy/PyTorch/etc.
-  TVM_FFI_ICHECK(data.defined()) << "Cannot set_data from undefined Tensor (Blob#" << id_ << ")";
-  TVM_FFI_ICHECK_EQ(data.ndim(), num_axes())
+  CAFFE_FFI_CHECK_TYPE(data.defined()) << "Cannot set_data from undefined Tensor (Blob#" << id_ << ")";
+  CAFFE_FFI_CHECK_VALUE_EQ(data.ndim(), num_axes())
       << "Tensor ndim mismatch for Blob#" << id_ << ": expected " << num_axes() << ", got " << data.ndim();
   for (int i = 0; i < data.ndim(); ++i) {
-    TVM_FFI_ICHECK_EQ(data.size(i), shape(i))
+    CAFFE_FFI_CHECK_VALUE_EQ(data.size(i), shape(i))
         << "Tensor shape mismatch at axis " << i << " for Blob#" << id_
         << ": expected " << shape(i) << ", got " << data.size(i);
   }
-  TVM_FFI_ICHECK(data.dtype().code == kDLFloat && data.dtype().bits == 32)
+  CAFFE_FFI_CHECK_TYPE(data.dtype().code == kDLFloat && data.dtype().bits == 32)
       << "set_data expects float32 Tensor for Blob#" << id_
       << ", got dtype code=" << static_cast<int>(data.dtype().code) << " bits=" << data.dtype().bits;
 
@@ -360,15 +362,15 @@ Array<float> Blob::get_diff() const {
 }
 
 void Blob::set_diff(Tensor diff) {
-  TVM_FFI_ICHECK(diff.defined()) << "Cannot set_diff from undefined Tensor (Blob#" << id_ << ")";
-  TVM_FFI_ICHECK_EQ(diff.ndim(), num_axes())
+  CAFFE_FFI_CHECK_TYPE(diff.defined()) << "Cannot set_diff from undefined Tensor (Blob#" << id_ << ")";
+  CAFFE_FFI_CHECK_VALUE_EQ(diff.ndim(), num_axes())
       << "Tensor ndim mismatch for Blob#" << id_ << " diff: expected " << num_axes() << ", got " << diff.ndim();
   for (int i = 0; i < diff.ndim(); ++i) {
-    TVM_FFI_ICHECK_EQ(diff.size(i), shape(i))
+    CAFFE_FFI_CHECK_VALUE_EQ(diff.size(i), shape(i))
         << "Tensor shape mismatch at axis " << i << " for Blob#" << id_ << " diff"
         << ": expected " << shape(i) << ", got " << diff.size(i);
   }
-  TVM_FFI_ICHECK(diff.dtype().code == kDLFloat && diff.dtype().bits == 32)
+  CAFFE_FFI_CHECK_TYPE(diff.dtype().code == kDLFloat && diff.dtype().bits == 32)
       << "set_diff expects float32 Tensor for Blob#" << id_
       << ", got dtype code=" << static_cast<int>(diff.dtype().code) << " bits=" << diff.dtype().bits;
 

@@ -11,6 +11,7 @@
 #include <tvm/ffi/memory.h>
 #include <google/protobuf/text_format.h>
 
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
 
@@ -136,7 +137,7 @@ void Net::AppendTop(const caffe::NetParameter& param, int layer_id,
   const std::string& blob_name = layer_param.top(top_id);
   CAFFE_FFI_NET_LOG << "AppendTop: layer[" << layer_id << "]='" << layer_param.name()
                     << "', top[" << top_id << "]='" << blob_name << "'";
-  TVM_FFI_ICHECK(available_blobs->find(blob_name) == available_blobs->end())
+  CAFFE_FFI_CHECK_RUNTIME(available_blobs->find(blob_name) == available_blobs->end())
       << "Top blob '" << blob_name << "' produced by multiple sources.";
   if (blob_name_to_idx->find(blob_name) == blob_name_to_idx->end()) {
     CAFFE_FFI_NET_LOG << "AppendTop: creating new blob '" << blob_name << "' at index " << blobs_.size();
@@ -159,7 +160,7 @@ int Net::AppendBottom(const caffe::NetParameter& param, int layer_id,
   const std::string& blob_name = layer_param.bottom(bottom_id);
   CAFFE_FFI_NET_LOG << "AppendBottom: layer[" << layer_id << "]='" << layer_param.name()
                     << "', bottom[" << bottom_id << "]='" << blob_name << "'";
-  TVM_FFI_ICHECK(available_blobs->find(blob_name) != available_blobs->end())
+  CAFFE_FFI_CHECK_KEY(available_blobs->find(blob_name) != available_blobs->end())
       << "Unknown bottom blob '" << blob_name << "' (layer '" << layer_param.name()
       << "', bottom index " << bottom_id << ")";
   int blob_idx = (*blob_name_to_idx)[blob_name];
@@ -180,8 +181,8 @@ Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Tensor>& inputs) {
       ObjectPtr<Blob> blob = blob_by_name(name);
       const int64_t data_size = data.numel();
 
-      TVM_FFI_ICHECK(data.defined()) << "Input tensor '" << name << "' is undefined";
-      TVM_FFI_ICHECK(data.dtype().code == kDLFloat && data.dtype().bits == 32)
+      CAFFE_FFI_CHECK_TYPE(data.defined()) << "Input tensor '" << name << "' is undefined";
+      CAFFE_FFI_CHECK_TYPE(data.dtype().code == kDLFloat && data.dtype().bits == 32)
           << "Forward input '" << name << "' expects float32 Tensor, got dtype code="
           << static_cast<int>(data.dtype().code) << " bits=" << data.dtype().bits;
 
@@ -227,7 +228,7 @@ Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Tensor>& inputs) {
                            << nbytes << "B) to blob " << name << " at " << dst;
       std::memcpy(dst, src, nbytes);
     } else {
-      TVM_FFI_ICHECK(has_blob(name))
+      CAFFE_FFI_CHECK_KEY(has_blob(name))
           << "Forward: input blob '" << name << "' not found in network '" << name_ << "'. "
           << "Available blobs: " << [&]() {
                std::ostringstream oss;
@@ -251,8 +252,8 @@ Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Tensor>& inputs) {
 }
 
 float Net::ForwardFromTo(int start, int end) {
-  TVM_FFI_ICHECK_GE(start, 0);
-  TVM_FFI_ICHECK_LT(end, static_cast<int>(layers_.size()));
+  CAFFE_FFI_CHECK_INDEX_GE(start, 0);
+  CAFFE_FFI_CHECK_INDEX_LT(end, static_cast<int>(layers_.size()));
   CAFFE_FFI_NET_LOG << "ForwardFromTo: layers[" << start << ".." << end << "]";
   float total_loss = 0.0f;
   for (int i = start; i <= end; ++i) {
@@ -331,13 +332,13 @@ Array<ObjectPtr<Blob>> Net::output_blobs_array() const {
 
 ObjectPtr<Blob> Net::blob_by_name(const std::string& blob_name) const {
   auto it = blob_names_index_.find(blob_name);
-  TVM_FFI_ICHECK(it != blob_names_index_.end()) << "Unknown blob: " << blob_name;
+  CAFFE_FFI_CHECK_KEY(it != blob_names_index_.end()) << "Unknown blob: " << blob_name;
   return blobs_[it->second];
 }
 
 ObjectPtr<Layer> Net::layer_by_name(const std::string& layer_name) const {
   auto it = layer_names_index_.find(layer_name);
-  TVM_FFI_ICHECK(it != layer_names_index_.end()) << "Unknown layer: " << layer_name;
+  CAFFE_FFI_CHECK_KEY(it != layer_names_index_.end()) << "Unknown layer: " << layer_name;
   return layers_[it->second];
 }
 
@@ -380,20 +381,20 @@ void Net::CopyTrainedLayersFrom(const caffe::NetParameter& trained_net_param) {
 
 caffe::NetParameter ReadNetParamsFromTextFile(const std::string& filename) {
   std::ifstream ifs(filename);
-  TVM_FFI_ICHECK(ifs.is_open()) << "Could not open file: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(ifs.is_open()) << "Could not open file: " << filename;
   std::stringstream ss;
   ss << ifs.rdbuf();
   caffe::NetParameter param;
   bool success = google::protobuf::TextFormat::ParseFromString(ss.str(), &param);
-  TVM_FFI_ICHECK(success) << "Failed to parse NetParameter from file: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(success) << "Failed to parse NetParameter from file: " << filename;
   return param;
 }
 
 caffe::NetParameter ReadNetParamsFromBinaryFile(const std::string& filename) {
   std::ifstream ifs(filename, std::ios::binary);
-  TVM_FFI_ICHECK(ifs.is_open()) << "Failed to open binary file: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(ifs.is_open()) << "Failed to open binary file: " << filename;
   caffe::NetParameter param;
-  TVM_FFI_ICHECK(param.ParseFromIstream(&ifs)) << "Failed to parse binary file: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(param.ParseFromIstream(&ifs)) << "Failed to parse binary file: " << filename;
   return param;
 }
 

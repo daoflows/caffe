@@ -11,6 +11,7 @@
 #include "caffe_ffi/layer.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/net.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
 #include "caffe_ffi/backtrace.hpp"
@@ -56,30 +57,30 @@ ObjectPtr<Blob> NewBlob() {
 ObjectPtr<Blob> NewBlobFromShape(Shape shape) {
   ShapeView sv(shape.data(), shape.size());
   for (size_t i = 0; i < sv.size(); ++i) {
-    TVM_FFI_ICHECK(sv[i] >= 0)
+    CAFFE_FFI_CHECK_VALUE_GE(sv[i], 0)
         << "Blob shape dimension " << i << " must be non-negative, got " << sv[i];
   }
   return make_object<Blob>(sv);
 }
 
 ObjectPtr<Net> NewNetFromProtoString(const String& proto_text) {
-  TVM_FFI_ICHECK(!proto_text.empty()) << "NetParameter proto text must not be empty";
+  CAFFE_FFI_CHECK_VALUE(!proto_text.empty()) << "NetParameter proto text must not be empty";
   caffe::NetParameter param;
   bool success = google::protobuf::TextFormat::ParseFromString(
       static_cast<std::string>(proto_text), &param);
-  TVM_FFI_ICHECK(success) << "Failed to parse NetParameter from text format";
+  CAFFE_FFI_CHECK_RUNTIME(success) << "Failed to parse NetParameter from text format";
   return make_object<Net>(param);
 }
 
 ObjectPtr<Net> NewNetFromFile(const String& filename) {
-  TVM_FFI_ICHECK(!filename.empty()) << "Net prototxt filename must not be empty";
+  CAFFE_FFI_CHECK_VALUE(!filename.empty()) << "Net prototxt filename must not be empty";
   std::ifstream ifs(static_cast<std::string>(filename));
-  TVM_FFI_ICHECK(ifs.good()) << "Failed to open net file: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(ifs.good()) << "Failed to open net file: " << filename;
   std::stringstream ss;
   ss << ifs.rdbuf();
   caffe::NetParameter param;
   bool success = google::protobuf::TextFormat::ParseFromString(ss.str(), &param);
-  TVM_FFI_ICHECK(success) << "Failed to parse prototxt: " << filename;
+  CAFFE_FFI_CHECK_RUNTIME(success) << "Failed to parse prototxt: " << filename;
   return make_object<Net>(param);
 }
 

@@ -6,6 +6,7 @@
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -25,17 +26,17 @@ void InnerProductLayer::LayerSetUp(const std::vector<Blob*>& bottom,
                       << " axis=" << axis << " K_=" << K_;
   if (this->blobs_.size() > 0) {
     CAFFE_FFI_LAYER_LOG << "InnerProduct: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
-    TVM_FFI_ICHECK_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
         << "Incorrect number of weight blobs.";
     if (transpose_) {
-      TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(0), K_);
-      TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(1), N_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(0), K_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(1), N_);
     } else {
-      TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(0), N_);
-      TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(1), K_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(0), N_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(1), K_);
     }
     if (bias_term_) {
-      TVM_FFI_ICHECK_EQ(this->blobs_[1]->count(), N_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[1]->count(), N_);
     }
   } else {
     if (bias_term_) {
@@ -68,7 +69,7 @@ void InnerProductLayer::Reshape(const std::vector<Blob*>& bottom,
   const int axis = bottom[0]->CanonicalAxisIndex(
       this->layer_param_.inner_product_param().axis());
   const int new_K = static_cast<int>(bottom[0]->count(axis));
-  TVM_FFI_ICHECK_EQ(K_, new_K)
+  CAFFE_FFI_CHECK_VALUE_EQ(K_, new_K)
       << "Input size incompatible with inner product parameters.";
   M_ = static_cast<int>(bottom[0]->count(0, axis));
   std::vector<int64_t> top_shape;

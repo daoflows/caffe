@@ -7,6 +7,7 @@
 
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 
 namespace caffe_ffi {
 
@@ -24,8 +25,8 @@ void ConcatLayer::LayerSetUp(const std::vector<Blob*>& bottom,
 void ConcatLayer::Reshape(const std::vector<Blob*>& bottom,
                            const std::vector<Blob*>& top) {
   const int num_axes = bottom[0]->num_axes();
-  TVM_FFI_ICHECK_GE(concat_axis_, 0);
-  TVM_FFI_ICHECK_LT(concat_axis_, num_axes);
+  CAFFE_FFI_CHECK_VALUE_GE(concat_axis_, 0);
+  CAFFE_FFI_CHECK_VALUE_LT(concat_axis_, num_axes);
 
   std::vector<int64_t> top_shape(num_axes);
   for (int i = 0; i < num_axes; ++i) {
@@ -38,11 +39,11 @@ void ConcatLayer::Reshape(const std::vector<Blob*>& bottom,
   concat_offsets_[0] = 0;
 
   for (int i = 0; i < num_bottoms; ++i) {
-    TVM_FFI_ICHECK_EQ(bottom[i]->num_axes(), num_axes)
+    CAFFE_FFI_CHECK_VALUE_EQ(bottom[i]->num_axes(), num_axes)
         << "All bottom blobs must have the same number of axes.";
     for (int j = 0; j < num_axes; ++j) {
       if (j == concat_axis_) continue;
-      TVM_FFI_ICHECK_EQ(bottom[i]->shape(j), top_shape[j])
+      CAFFE_FFI_CHECK_VALUE_EQ(bottom[i]->shape(j), top_shape[j])
           << "All bottom blobs must have matching dimensions except along concat axis.";
     }
     top_shape[concat_axis_] += bottom[i]->shape(concat_axis_);

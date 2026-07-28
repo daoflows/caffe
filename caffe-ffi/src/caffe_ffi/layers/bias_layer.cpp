@@ -8,6 +8,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -21,8 +22,8 @@ void BiasLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   CAFFE_FFI_LAYER_LOG << "Bias LayerSetUp: axis_=" << axis_
                       << " num_axes_=" << num_axes_;
 
-  TVM_FFI_ICHECK_GE(num_axes_, 1) << "num_axes should be >= 1";
-  TVM_FFI_ICHECK_LE(axis_ + num_axes_, bottom[0]->num_axes())
+  CAFFE_FFI_CHECK_VALUE_GE(num_axes_, 1) << "num_axes should be >= 1";
+  CAFFE_FFI_CHECK_VALUE_LE(axis_ + num_axes_, bottom[0]->num_axes())
       << "axis + num_axes exceeds blob dimensions";
 
   if (bottom.size() == 1 && this->blobs_.size() == 0) {
@@ -75,7 +76,7 @@ void BiasLayer::Reshape(const std::vector<Blob*>& bottom,
 
   int dim = bias_dim_;
   for (int i = 0; i < num_axes_; ++i) {
-    TVM_FFI_ICHECK_EQ(bottom[0]->shape(axis_ + i), (bottom.size() > 1)
+    CAFFE_FFI_CHECK_VALUE_EQ(bottom[0]->shape(axis_ + i), (bottom.size() > 1)
                  ? bottom[1]->shape(i) : this->blobs_[0]->shape(i))
         << "Dimensions mismatch for bias";
     dim /= static_cast<int>(bottom[0]->shape(axis_ + i));

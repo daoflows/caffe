@@ -9,6 +9,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -99,8 +100,8 @@ void PoolingLayer::Reshape(const std::vector<Blob*>& bottom,
     }
   }
 
-  TVM_FFI_ICHECK_GT(pooled_height_, 0) << "Pooled height should be positive.";
-  TVM_FFI_ICHECK_GT(pooled_width_, 0) << "Pooled width should be positive.";
+  CAFFE_FFI_CHECK_VALUE_GT(pooled_height_, 0) << "Pooled height should be positive.";
+  CAFFE_FFI_CHECK_VALUE_GT(pooled_width_, 0) << "Pooled width should be positive.";
 
   std::vector<int64_t> top_shape = {bottom[0]->shape(0), channels_, pooled_height_, pooled_width_};
   top[0]->Reshape(top_shape);

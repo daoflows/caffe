@@ -8,6 +8,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -54,7 +55,7 @@ void ConvolutionLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   }
 
   channels_ = static_cast<int>(bottom[0]->shape(1));
-  TVM_FFI_ICHECK_EQ(channels_ % group_, 0)
+  CAFFE_FFI_CHECK_VALUE_EQ(channels_ % group_, 0)
       << "Input channels should be divided by group.";
   conv_out_channels_ = num_output_;
   conv_in_channels_ = channels_ / group_;
@@ -78,12 +79,12 @@ void ConvolutionLayer::LayerSetUp(const std::vector<Blob*>& bottom,
 
   if (this->blobs_.size() > 0) {
     CAFFE_FFI_LAYER_LOG << "Convolution: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
-    TVM_FFI_ICHECK_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
         << "Incorrect number of weight blobs.";
-    TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(0), num_output_);
-    TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(1), kernel_dim_);
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(0), num_output_);
+    CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[0]->shape(1), kernel_dim_);
     if (bias_term_) {
-      TVM_FFI_ICHECK_EQ(this->blobs_[1]->count(), num_output_);
+      CAFFE_FFI_CHECK_VALUE_EQ(this->blobs_[1]->count(), num_output_);
     }
   } else {
     if (bias_term_) {
@@ -112,8 +113,8 @@ void ConvolutionLayer::Reshape(const std::vector<Blob*>& bottom,
   output_h_ = (height_ + 2 * pad_h_ - dilation_h_ * (kernel_h_ - 1) - 1) / stride_h_ + 1;
   output_w_ = (width_ + 2 * pad_w_ - dilation_w_ * (kernel_w_ - 1) - 1) / stride_w_ + 1;
 
-  TVM_FFI_ICHECK_GT(output_h_, 0) << "Output height should be positive.";
-  TVM_FFI_ICHECK_GT(output_w_, 0) << "Output width should be positive.";
+  CAFFE_FFI_CHECK_VALUE_GT(output_h_, 0) << "Output height should be positive.";
+  CAFFE_FFI_CHECK_VALUE_GT(output_w_, 0) << "Output width should be positive.";
 
   conv_out_spatial_dim_ = output_h_ * output_w_;
 

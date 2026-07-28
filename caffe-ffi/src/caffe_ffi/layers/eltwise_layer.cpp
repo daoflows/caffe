@@ -6,6 +6,7 @@
 
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 
 namespace caffe_ffi {
 
@@ -13,7 +14,7 @@ void EltwiseLayer::LayerSetUp(const std::vector<Blob*>& bottom,
                                const std::vector<Blob*>& top) {
   const caffe::EltwiseParameter& param = this->layer_param_.eltwise_param();
   op_ = static_cast<EltwiseOp>(param.operation());
-  TVM_FFI_ICHECK(op_ == PROD || op_ == SUM || op_ == MAX)
+  CAFFE_FFI_CHECK_VALUE(op_ == PROD || op_ == SUM || op_ == MAX)
       << "EltwiseLayer only supports PROD, SUM, and MAX operations.";
 
   const char* op_name = "UNKNOWN";
@@ -26,7 +27,7 @@ void EltwiseLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   const int num_bottoms = static_cast<int>(bottom.size());
   coeffs_.resize(num_bottoms, 1.0f);
   if (param.coeff_size() > 0) {
-    TVM_FFI_ICHECK_EQ(param.coeff_size(), num_bottoms)
+    CAFFE_FFI_CHECK_VALUE_EQ(param.coeff_size(), num_bottoms)
         << "EltwiseLayer coeff count must match bottom count.";
     for (int i = 0; i < num_bottoms; ++i) {
       coeffs_[i] = param.coeff(i);
@@ -47,10 +48,10 @@ void EltwiseLayer::LayerSetUp(const std::vector<Blob*>& bottom,
 void EltwiseLayer::Reshape(const std::vector<Blob*>& bottom,
                             const std::vector<Blob*>& top) {
   for (size_t i = 1; i < bottom.size(); ++i) {
-    TVM_FFI_ICHECK_EQ(bottom[i]->num_axes(), bottom[0]->num_axes())
+    CAFFE_FFI_CHECK_VALUE_EQ(bottom[i]->num_axes(), bottom[0]->num_axes())
         << "All bottom blobs must have the same number of axes.";
     for (int j = 0; j < bottom[0]->num_axes(); ++j) {
-      TVM_FFI_ICHECK_EQ(bottom[i]->shape(j), bottom[0]->shape(j))
+      CAFFE_FFI_CHECK_VALUE_EQ(bottom[i]->shape(j), bottom[0]->shape(j))
           << "All bottom blobs must have the same shape.";
     }
   }
@@ -138,7 +139,7 @@ void EltwiseLayer::Forward_cpu(const std::vector<Blob*>& bottom,
       break;
     }
     default:
-      TVM_FFI_ICHECK(false) << "Unknown elementwise operation.";
+      CAFFE_FFI_THROW(RuntimeError) << "Unknown elementwise operation.";
   }
 }
 

@@ -7,6 +7,7 @@
 
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -37,8 +38,8 @@ void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
   const int shape_dim_size = shape.dim_size();
 
   int start_axis = CanonicalAxisIndex(axis_, input_num_axes + 1);
-  TVM_FFI_ICHECK_GE(start_axis, 0);
-  TVM_FFI_ICHECK_LE(start_axis, input_num_axes);
+  CAFFE_FFI_CHECK_VALUE_GE(start_axis, 0);
+  CAFFE_FFI_CHECK_VALUE_LE(start_axis, input_num_axes);
 
   int end_axis;
   if (num_axes_ == -1) {
@@ -47,7 +48,7 @@ void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
     end_axis = start_axis + num_axes_;
     end_axis = std::min(end_axis, input_num_axes);
   }
-  TVM_FFI_ICHECK_GE(end_axis, start_axis);
+  CAFFE_FFI_CHECK_VALUE_GE(end_axis, start_axis);
 
   std::vector<int64_t> top_shape;
   for (int i = 0; i < start_axis; ++i) {
@@ -59,17 +60,17 @@ void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
   for (int i = 0; i < shape_dim_size; ++i) {
     int dim = static_cast<int>(shape.dim(i));
     if (dim == 0) {
-      TVM_FFI_ICHECK_LT(start_axis + i, input_num_axes)
+      CAFFE_FFI_CHECK_VALUE_LT(start_axis + i, input_num_axes)
           << "dim=0 (copy axis) out of input bounds";
       top_shape.push_back(input_blob->shape(start_axis + i));
       constant_count *= top_shape.back();
     } else if (dim == -1) {
-      TVM_FFI_ICHECK_EQ(inferred_axis, -1)
+      CAFFE_FFI_CHECK_VALUE_EQ(inferred_axis, -1)
           << "Reshape shape contains multiple -1 dims";
       inferred_axis = top_shape.size();
       top_shape.push_back(0);
     } else {
-      TVM_FFI_ICHECK_GT(dim, 0) << "Reshape dim must be positive, -1, or 0";
+      CAFFE_FFI_CHECK_VALUE_GT(dim, 0) << "Reshape dim must be positive, -1, or 0";
       top_shape.push_back(dim);
       constant_count *= dim;
     }
@@ -85,12 +86,12 @@ void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
   }
 
   if (inferred_axis >= 0) {
-    TVM_FFI_ICHECK_GT(constant_count, 0);
-    TVM_FFI_ICHECK_EQ(input_region_count % constant_count, 0)
+    CAFFE_FFI_CHECK_VALUE_GT(constant_count, 0);
+    CAFFE_FFI_CHECK_VALUE_EQ(input_region_count % constant_count, 0)
         << "Cannot infer reshape dim: input count not divisible by constant count";
     top_shape[inferred_axis] = input_region_count / constant_count;
   } else {
-    TVM_FFI_ICHECK_EQ(input_region_count, constant_count)
+    CAFFE_FFI_CHECK_VALUE_EQ(input_region_count, constant_count)
         << "Reshape count mismatch";
   }
 

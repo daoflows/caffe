@@ -10,6 +10,7 @@
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -36,7 +37,7 @@ void AccuracyLayer::Reshape(const std::vector<Blob*>& bottom,
   inner_num_ = static_cast<int>(bottom[0]->count(label_axis_ + 1));
 
   int dim = static_cast<int>(bottom[0]->count() / outer_num_);
-  TVM_FFI_ICHECK_LE(top_k_, dim) << "top_k must be <= number of classes.";
+  CAFFE_FFI_CHECK_VALUE_LE(top_k_, dim) << "top_k must be <= number of classes.";
 
   std::vector<int64_t> top_shape = {1};
   top[0]->Reshape(top_shape);
@@ -100,8 +101,8 @@ void AccuracyLayer::Forward_cpu(const std::vector<Blob*>& bottom,
       if (has_ignore_label_ && label_value == ignore_label_) {
         continue;
       }
-      TVM_FFI_ICHECK_GE(label_value, 0);
-      TVM_FFI_ICHECK_LT(label_value, channels);
+      CAFFE_FFI_CHECK_VALUE_GE(label_value, 0);
+      CAFFE_FFI_CHECK_VALUE_LT(label_value, channels);
 
       for (int k = 0; k < channels; ++k) {
         bottom_data_vector[k] = std::make_pair(

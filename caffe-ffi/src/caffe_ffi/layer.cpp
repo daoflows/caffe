@@ -5,6 +5,7 @@
 
 #include <tvm/ffi/memory.h>
 
+#include "caffe_ffi/error.hpp"
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
 
@@ -74,37 +75,37 @@ void Layer::CheckBlobCounts(const std::vector<Blob*>& bottom,
   const std::string& layer_name = layer_param_.name();
   const char* type_str = type();
   if (ExactNumBottomBlobs() >= 0) {
-    TVM_FFI_ICHECK_EQ(ExactNumBottomBlobs(), static_cast<int>(bottom.size()))
+    CAFFE_FFI_CHECK_VALUE_EQ(ExactNumBottomBlobs(), static_cast<int>(bottom.size()))
         << type_str << " layer '" << layer_name << "' takes " << ExactNumBottomBlobs()
         << " bottom blob(s) as input, got " << bottom.size();
   }
   if (MinBottomBlobs() >= 0) {
-    TVM_FFI_ICHECK_LE(MinBottomBlobs(), static_cast<int>(bottom.size()))
+    CAFFE_FFI_CHECK_VALUE_LE(MinBottomBlobs(), static_cast<int>(bottom.size()))
         << type_str << " layer '" << layer_name << "' takes at least " << MinBottomBlobs()
         << " bottom blob(s), got " << bottom.size();
   }
   if (MaxBottomBlobs() >= 0) {
-    TVM_FFI_ICHECK_GE(MaxBottomBlobs(), static_cast<int>(bottom.size()))
+    CAFFE_FFI_CHECK_VALUE_GE(MaxBottomBlobs(), static_cast<int>(bottom.size()))
         << type_str << " layer '" << layer_name << "' takes at most " << MaxBottomBlobs()
         << " bottom blob(s), got " << bottom.size();
   }
   if (ExactNumTopBlobs() >= 0) {
-    TVM_FFI_ICHECK_EQ(ExactNumTopBlobs(), static_cast<int>(top.size()))
+    CAFFE_FFI_CHECK_VALUE_EQ(ExactNumTopBlobs(), static_cast<int>(top.size()))
         << type_str << " layer '" << layer_name << "' produces " << ExactNumTopBlobs()
         << " top blob(s), got " << top.size();
   }
   if (MinTopBlobs() >= 0) {
-    TVM_FFI_ICHECK_LE(MinTopBlobs(), static_cast<int>(top.size()))
+    CAFFE_FFI_CHECK_VALUE_LE(MinTopBlobs(), static_cast<int>(top.size()))
         << type_str << " layer '" << layer_name << "' produces at least " << MinTopBlobs()
         << " top blob(s), got " << top.size();
   }
   if (MaxTopBlobs() >= 0) {
-    TVM_FFI_ICHECK_GE(MaxTopBlobs(), static_cast<int>(top.size()))
+    CAFFE_FFI_CHECK_VALUE_GE(MaxTopBlobs(), static_cast<int>(top.size()))
         << type_str << " layer '" << layer_name << "' produces at most " << MaxTopBlobs()
         << " top blob(s), got " << top.size();
   }
   if (EqualNumBottomTopBlobs()) {
-    TVM_FFI_ICHECK_EQ(bottom.size(), top.size())
+    CAFFE_FFI_CHECK_VALUE_EQ(bottom.size(), top.size())
         << type_str << " layer '" << layer_name << "' produces one top blob per bottom blob, "
         << "got " << bottom.size() << " bottom and " << top.size() << " top";
   }
@@ -113,7 +114,7 @@ void Layer::CheckBlobCounts(const std::vector<Blob*>& bottom,
 void Layer::SetLossWeights(const std::vector<Blob*>& top) {
   const int num_loss_weights = layer_param_.loss_weight_size();
   if (num_loss_weights) {
-    TVM_FFI_ICHECK_EQ(top.size(), static_cast<size_t>(num_loss_weights))
+    CAFFE_FFI_CHECK_VALUE_EQ(top.size(), static_cast<size_t>(num_loss_weights))
         << "loss_weight must be unspecified or specified once per top blob "
         << "in layer '" << layer_param_.name() << "' (" << type() << "), "
         << "got " << num_loss_weights << " loss_weight for " << top.size() << " top blobs.";
