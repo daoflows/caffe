@@ -80,12 +80,13 @@ class Blob(tvm_ffi.Object):
 class Layer(tvm_ffi.Object):
 
     _type_key = "caffe_ffi.Layer"
-    __slots__ = ['_py_blobs', '_py_name']
+    __slots__ = ['_py_blobs', '_py_name', '_py_type_str']
 
     def __new__(cls, handle=None):
         inst = super().__new__(cls)
         inst._py_blobs = []
         inst._py_name = ""
+        inst._py_type_str = ""
         return inst
 
     def __init__(self, handle=None):
@@ -349,7 +350,7 @@ def _add_python_wrappers():
     def _layer_type(self):
         if self._is_native and Layer._native_type is not None:
             return Layer._native_type(self)
-        return ""
+        return getattr(self, '_py_type_str', '')
 
     def _layer_blobs(self):
         if self._is_native and Layer._native_blobs_array is not None:
@@ -423,14 +424,20 @@ def _add_python_wrappers():
 
     def _net_blob_by_name(self, name):
         if self._is_native and Net._native_blob_by_name is not None:
-            return Net._native_blob_by_name(self, name)
+            try:
+                return Net._native_blob_by_name(self, name)
+            except (RuntimeError, AttributeError):
+                raise KeyError(f"Blob '{name}' not found")
         if name in self._py_blobs:
             return self._py_blobs[name]
         raise KeyError(f"Blob '{name}' not found")
 
     def _net_layer_by_name(self, name):
         if self._is_native and Net._native_layer_by_name is not None:
-            return Net._native_layer_by_name(self, name)
+            try:
+                return Net._native_layer_by_name(self, name)
+            except (RuntimeError, AttributeError):
+                raise KeyError(f"Layer '{name}' not found")
         if name in self._py_layers:
             return self._py_layers[name]
         raise KeyError(f"Layer '{name}' not found")

@@ -161,7 +161,7 @@ class TestNetForward:
         assert isinstance(out, dict)
 
     def test_forward_pure_python_reference(self, mlp_net):
-        if mlp_net._handle is not None:
+        if mlp_net._is_native:
             pytest.skip("Requires pure Python net for reference test")
         inp = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
         out = mlp_net.forward({"data": inp})

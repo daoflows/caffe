@@ -49,7 +49,12 @@ inline int CanonicalAxisIndex(int axis_index, int num_axes) {
 
 inline int64_t Count(ShapeView shape, int start_axis, int end_axis) {
   int n = static_cast<int>(shape.size());
-  start_axis = CanonicalAxisIndex(start_axis, n);
+  if (start_axis < 0) {
+    start_axis = CanonicalAxisIndex(start_axis, n);
+  } else if (start_axis > n) {
+    TVM_FFI_ICHECK_LT(start_axis, n + 1)
+        << "axis " << start_axis << " out of range for " << n << "-D blob";
+  }
   end_axis = CanonicalAxisIndex(end_axis, n + 1);
   if (start_axis >= end_axis) return 1;
   int64_t count = 1;
@@ -61,7 +66,12 @@ inline int64_t Count(ShapeView shape, int start_axis, int end_axis) {
 
 inline int64_t Count(ShapeView shape, int start_axis) {
   int n = static_cast<int>(shape.size());
-  start_axis = CanonicalAxisIndex(start_axis, n);
+  if (start_axis < 0) {
+    start_axis = CanonicalAxisIndex(start_axis, n);
+  } else if (start_axis > n) {
+    TVM_FFI_ICHECK_LT(start_axis, n + 1)
+        << "axis " << start_axis << " out of range for " << n << "-D blob";
+  }
   return Count(shape, start_axis, n);
 }
 

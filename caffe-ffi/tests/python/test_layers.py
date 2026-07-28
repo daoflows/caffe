@@ -38,8 +38,6 @@ layer {
     @require_cpp_extension
     def test_input_layer_forward(self):
         prototxt = """name: "input_test"
-input: "data"
-input_shape { dim: 2 dim: 3 }
 layer {
   name: "data"
   type: "Input"
@@ -60,8 +58,6 @@ class TestReLU:
     @require_cpp_extension
     def test_relu_positive_unchanged(self):
         prototxt = """name: "relu_test"
-input: "data"
-input_shape { dim: 2 dim: 3 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 2 dim: 3 } } }
 layer { name: "relu" type: "ReLU" bottom: "data" top: "out" }
 """
@@ -73,8 +69,6 @@ layer { name: "relu" type: "ReLU" bottom: "data" top: "out" }
     @require_cpp_extension
     def test_relu_negative_zero(self):
         prototxt = """name: "relu_test"
-input: "data"
-input_shape { dim: 2 dim: 3 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 2 dim: 3 } } }
 layer { name: "relu" type: "ReLU" bottom: "data" top: "out" }
 """
@@ -106,8 +100,6 @@ class TestInnerProduct:
     @require_cpp_extension
     def test_inner_product_matmul_bias(self):
         prototxt = """name: "ip_test"
-input: "data"
-input_shape { dim: 2 dim: 3 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 2 dim: 3 } } }
 layer {
   name: "ip"
@@ -143,8 +135,6 @@ class TestSoftmax:
     @require_cpp_extension
     def test_softmax_sums_to_one(self):
         prototxt = """name: "softmax_test"
-input: "data"
-input_shape { dim: 2 dim: 3 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 2 dim: 3 } } }
 layer { name: "prob" type: "Softmax" bottom: "data" top: "prob" }
 """
@@ -156,8 +146,6 @@ layer { name: "prob" type: "Softmax" bottom: "data" top: "prob" }
     @require_cpp_extension
     def test_softmax_all_zero_uniform(self):
         prototxt = """name: "softmax_test"
-input: "data"
-input_shape { dim: 1 dim: 3 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 1 dim: 3 } } }
 layer { name: "prob" type: "Softmax" bottom: "data" top: "prob" }
 """
@@ -191,8 +179,6 @@ class TestFlatten:
     @require_cpp_extension
     def test_flatten_shape(self):
         prototxt = """name: "flatten_test"
-input: "data"
-input_shape { dim: 2 dim: 3 dim: 4 dim: 5 }
 layer { name: "data" type: "Input" top: "data" input_param { shape { dim: 2 dim: 3 dim: 4 dim: 5 } } }
 layer { name: "flat" type: "Flatten" bottom: "data" top: "flat" }
 """
