@@ -10,9 +10,10 @@
 
 namespace caffe_ffi {
 
+std::atomic<int64_t> g_total_allocated_bytes{0};
+
 namespace {
 
-std::atomic<int64_t> g_total_allocated_bytes{0};
 std::atomic<int64_t> g_live_blob_count{0};
 std::atomic<int64_t> g_next_blob_id{1};
 
@@ -85,27 +86,23 @@ Blob::~Blob() {
   int64_t diff_nbytes = TensorNBytes(diff_tensor_);
   int64_t total_freed = data_nbytes + diff_nbytes;
 
+  int64_t live_before = g_live_blob_count.fetch_sub(1, std::memory_order_relaxed);
+  int64_t live_after = live_before - 1;
+
   CAFFE_FFI_MEM_LOG << "[MEM-FREE] Blob#" << id_ << " this=" << this
                     << " shape=" << ShapeToString(ShapeView(data_tensor_.shape().data(),
                                                             static_cast<size_t>(data_tensor_.ndim())))
                     << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
                     << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
-                    << " freed=" << total_freed << "B (" << FormatBytes(total_freed) << ")";
+                    << " freed=" << total_freed << "B (" << FormatBytes(total_freed) << ")"
+                    << " live_blobs=" << live_after;
 
-  if (total_freed > 0) {
-    int64_t before = g_total_allocated_bytes.fetch_sub(total_freed, std::memory_order_relaxed);
-    int64_t after = before - total_freed;
-    CAFFE_FFI_MEM_LOG << "[MEM-FREE] Blob#" << id_
-                      << " global_delta=-" << total_freed << "B"
-                      << " global_before=" << before << "B (" << FormatBytes(before) << ")"
-                      << " global_after=" << after << "B (" << FormatBytes(after) << ")";
-  }
+  data_tensor_ = Tensor();
+  diff_tensor_ = Tensor();
 
-  int64_t live_before = g_live_blob_count.fetch_sub(1, std::memory_order_relaxed);
-  int64_t live_after = live_before - 1;
   CAFFE_FFI_MEM_LOG << "[MEM-LIFECYCLE] Blob#" << id_
-                    << " destroyed, live_blobs=" << live_after
-                    << " (was " << live_before << ")";
+                    << " destroyed, global_total=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B"
+                    << " live_blobs=" << live_after << " (was " << live_before << ")";
 }
 
 Tensor Blob::data_tensor() const {
@@ -166,24 +163,19 @@ void Blob::Reshape(ShapeView shape) {
                       << " new_nbytes=" << new_total_nbytes << "B (" << FormatBytes(new_total_nbytes) << ")"
                       << " net_delta=" << (net_delta >= 0 ? "+" : "") << net_delta << "B";
 
+    int64_t global_before = g_total_allocated_bytes.load(std::memory_order_relaxed);
+
     data_tensor_ = NewCPUTensor(shape);
     diff_tensor_ = NewCPUTensor(shape);
 
-    if (old_nbytes > 0) {
-      g_total_allocated_bytes.fetch_sub(old_nbytes, std::memory_order_relaxed);
-    }
-    int64_t before_alloc = g_total_allocated_bytes.load(std::memory_order_relaxed);
-    if (new_total_nbytes > 0) {
-      g_total_allocated_bytes.fetch_add(new_total_nbytes, std::memory_order_relaxed);
-    }
-    int64_t after_alloc = g_total_allocated_bytes.load(std::memory_order_relaxed);
+    int64_t global_after = g_total_allocated_bytes.load(std::memory_order_relaxed);
 
     CAFFE_FFI_MEM_LOG << "[MEM-RESIZE] Blob#" << id_
                       << " new_data_ptr=" << PtrToString(data_tensor_.data_ptr())
                       << " new_diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
                       << " global_delta=" << (net_delta >= 0 ? "+" : "") << net_delta << "B"
-                      << " global_before=" << before_alloc << "B (" << FormatBytes(before_alloc) << ")"
-                      << " global_after=" << after_alloc << "B (" << FormatBytes(after_alloc) << ")"
+                      << " global_before=" << global_before << "B (" << FormatBytes(global_before) << ")"
+                      << " global_after=" << global_after << "B (" << FormatBytes(global_after) << ")"
                       << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   } else {
     CAFFE_FFI_TENSOR_LOG << "Reshape: Blob#" << id_ << " shape unchanged " << ShapeToString(shape)

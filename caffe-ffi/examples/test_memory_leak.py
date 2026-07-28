@@ -17,11 +17,13 @@
 from __future__ import annotations
 
 import gc
+import os
 import sys
 import traceback
 
-sys.path.insert(0, ".")
-from config import setup_debug, setup_quiet, memory_snapshot, check_memory_baseline
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
+
+from caffe_ffi.tools import setup_debug, setup_quiet, blob_snapshot as memory_snapshot, mem_check as check_memory_baseline
 import caffe_ffi
 from caffe_ffi import Blob
 import numpy as np

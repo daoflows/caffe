@@ -4,14 +4,17 @@
 在with块退出时b仍然存活，因此C++析构不会立即触发（这是Python正常行为）。
 要验证内存释放，需在del b或函数返回（b超出作用域）后调用mem_check()。
 """
-import sys
 import gc
+import os
+import sys
 import weakref
 
-sys.path.insert(0, ".")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'python'))
 
-from config import setup_debug, setup_quiet
-from utils.blob_wrapper import tracked_blob, BlobRef, blob_snapshot, mem_check
+from caffe_ffi.tools import (
+    setup_debug, setup_quiet,
+    tracked_blob, BlobRef, blob_snapshot, mem_check,
+)
 import caffe_ffi
 from caffe_ffi import Blob
 

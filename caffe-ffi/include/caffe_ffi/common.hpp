@@ -1,6 +1,7 @@
 #ifndef CAFFE_FFI_COMMON_HPP_
 #define CAFFE_FFI_COMMON_HPP_
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -12,6 +13,8 @@
 #include "caffe_ffi/log.hpp"
 
 namespace caffe_ffi {
+
+extern std::atomic<int64_t> g_total_allocated_bytes;
 
 using namespace tvm::ffi;
 
@@ -43,14 +46,23 @@ struct CPUMemAlloc {
     tensor->data = std::malloc(nbytes);
     TVM_FFI_ICHECK(tensor->data != nullptr) << "Failed to allocate CPU memory of size " << nbytes;
     std::memset(tensor->data, 0, nbytes);
-    CAFFE_FFI_MEM_LOG << "AllocData: allocated at " << tensor->data << " (" << nbytes << " bytes, zero-initialized)";
+    if (nbytes > 0) {
+      g_total_allocated_bytes.fetch_add(static_cast<int64_t>(nbytes), std::memory_order_relaxed);
+    }
+    CAFFE_FFI_MEM_LOG << "AllocData: allocated at " << tensor->data << " (" << nbytes << " bytes, zero-initialized)"
+                      << " global_total=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B";
   }
   void FreeData(DLTensor* tensor) {
     if (tensor->data) {
-      CAFFE_FFI_MEM_LOG << "FreeData: freeing memory at " << tensor->data;
+      size_t nbytes = tvm::ffi::GetDataSize(*tensor);
+      CAFFE_FFI_MEM_LOG << "FreeData: freeing memory at " << tensor->data << " (" << nbytes << " bytes)";
       std::free(tensor->data);
       tensor->data = nullptr;
-      CAFFE_FFI_MEM_LOG << "FreeData: memory freed, data pointer reset to nullptr";
+      if (nbytes > 0) {
+        g_total_allocated_bytes.fetch_sub(static_cast<int64_t>(nbytes), std::memory_order_relaxed);
+      }
+      CAFFE_FFI_MEM_LOG << "FreeData: memory freed, data pointer reset to nullptr"
+                        << " global_total=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B";
     } else {
       CAFFE_FFI_MEM_LOG << "FreeData: data is already nullptr, skipping";
     }
