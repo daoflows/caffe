@@ -1,11 +1,13 @@
 #include "caffe_ffi/layers/conv_layer.hpp"
 
+#include <sstream>
 #include <vector>
 
 #include <tvm/ffi/memory.h>
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -62,7 +64,20 @@ void ConvolutionLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   is_1x1_ = kernel_h_ == 1 && kernel_w_ == 1 && pad_h_ == 0 && pad_w_ == 0
             && stride_h_ == 1 && stride_w_ == 1 && dilation_h_ == 1 && dilation_w_ == 1;
 
+  CAFFE_FFI_LAYER_LOG << "Convolution LayerSetUp: num_output=" << num_output_
+                      << " kernel=[" << kernel_h_ << "," << kernel_w_ << "]"
+                      << " stride=[" << stride_h_ << "," << stride_w_ << "]"
+                      << " pad=[" << pad_h_ << "," << pad_w_ << "]"
+                      << " dilation=[" << dilation_h_ << "," << dilation_w_ << "]"
+                      << " group=" << group_
+                      << " bias_term=" << bias_term_
+                      << " is_1x1=" << is_1x1_
+                      << " channels=" << channels_
+                      << " conv_in_channels=" << conv_in_channels_
+                      << " kernel_dim=" << kernel_dim_;
+
   if (this->blobs_.size() > 0) {
+    CAFFE_FFI_LAYER_LOG << "Convolution: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
     TVM_FFI_ICHECK_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
         << "Incorrect number of weight blobs.";
     TVM_FFI_ICHECK_EQ(this->blobs_[0]->shape(0), num_output_);
@@ -78,9 +93,12 @@ void ConvolutionLayer::LayerSetUp(const std::vector<Blob*>& bottom,
     }
     std::vector<int64_t> weight_shape = {num_output_, kernel_dim_};
     this->blobs_[0] = make_object<Blob>(weight_shape);
+    CAFFE_FFI_TENSOR_LOG << "Convolution: created weight blob shape=["
+                         << weight_shape[0] << ", " << weight_shape[1] << "]";
     if (bias_term_) {
       std::vector<int64_t> bias_shape = {num_output_};
       this->blobs_[1] = make_object<Blob>(bias_shape);
+      CAFFE_FFI_TENSOR_LOG << "Convolution: created bias blob shape=[" << bias_shape[0] << "]";
     }
   }
   this->param_propagate_down_.resize(this->blobs_.size(), true);
@@ -102,15 +120,30 @@ void ConvolutionLayer::Reshape(const std::vector<Blob*>& bottom,
   std::vector<int64_t> top_shape = {bottom[0]->shape(0), num_output_, output_h_, output_w_};
   top[0]->Reshape(top_shape);
 
+  std::ostringstream top_shape_ss;
+  for (int i = 0; i < static_cast<int>(top_shape.size()); ++i) {
+    if (i > 0) top_shape_ss << ", ";
+    top_shape_ss << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Convolution Reshape: input=[" << bottom[0]->shape(0)
+                      << "," << channels_ << "," << height_ << "," << width_
+                      << "] output=[" << top_shape_ss.str() << "]"
+                      << " conv_out_spatial_dim=" << conv_out_spatial_dim_
+                      << " (output_h=" << output_h_ << ", output_w=" << output_w_ << ")";
+
   if (bias_term_) {
     std::vector<int64_t> bias_shape = {1, num_output_, 1, 1};
     bias_multiplier_ = make_object<Blob>(std::vector<int64_t>{conv_out_spatial_dim_});
     caffe_set_fp32(static_cast<size_t>(conv_out_spatial_dim_), 1.0f, bias_multiplier_->cpu_data());
+    CAFFE_FFI_TENSOR_LOG << "Convolution: created bias_multiplier shape=["
+                         << conv_out_spatial_dim_ << "]";
   }
 
   if (!is_1x1_) {
     std::vector<int64_t> col_buffer_shape = {kernel_dim_, conv_out_spatial_dim_};
     col_buffer_ = make_object<Blob>(col_buffer_shape);
+    CAFFE_FFI_TENSOR_LOG << "Convolution: created col_buffer shape=["
+                         << col_buffer_shape[0] << ", " << col_buffer_shape[1] << "]";
   }
 }
 
@@ -125,6 +158,13 @@ void ConvolutionLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   }
 
   const int num = static_cast<int>(bottom[0]->shape(0));
+  CAFFE_FFI_LAYER_LOG << "Convolution Forward: num=" << num
+                      << " group=" << group_
+                      << " M=" << conv_out_channels_ / group_
+                      << " N=" << conv_out_spatial_dim_
+                      << " K=" << kernel_dim_
+                      << " is_1x1=" << is_1x1_
+                      << " bias_term=" << bias_term_;
   for (int n = 0; n < num; ++n) {
     for (int g = 0; g < group_; ++g) {
       const float* bottom_slice = bottom_data + n * channels_ * height_ * width_

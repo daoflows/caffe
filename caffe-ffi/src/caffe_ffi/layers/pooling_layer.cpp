@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <vector>
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -42,6 +44,23 @@ void PoolingLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   } else {
     pad_h_ = pad_w_ = static_cast<int>(pool_param.pad());
   }
+
+  const char* pool_method_str = "UNKNOWN";
+  if (pool_method_ == caffe::PoolingParameter::MAX) {
+    pool_method_str = "MAX";
+  } else if (pool_method_ == caffe::PoolingParameter::AVE) {
+    pool_method_str = "AVE";
+  } else if (pool_method_ == caffe::PoolingParameter::STOCHASTIC) {
+    pool_method_str = "STOCHASTIC";
+  }
+  const char* round_mode_str = (round_mode_ == caffe::PoolingParameter::CEIL) ? "CEIL" : "FLOOR";
+
+  CAFFE_FFI_LAYER_LOG << "Pooling LayerSetUp: pool_method=" << pool_method_str
+                      << " global_pooling=" << global_pooling_
+                      << " round_mode=" << round_mode_str
+                      << " kernel=[" << kernel_h_ << "," << kernel_w_ << "]"
+                      << " stride=[" << stride_h_ << "," << stride_w_ << "]"
+                      << " pad=[" << pad_h_ << "," << pad_w_ << "]";
 }
 
 void PoolingLayer::Reshape(const std::vector<Blob*>& bottom,
@@ -85,6 +104,16 @@ void PoolingLayer::Reshape(const std::vector<Blob*>& bottom,
 
   std::vector<int64_t> top_shape = {bottom[0]->shape(0), channels_, pooled_height_, pooled_width_};
   top[0]->Reshape(top_shape);
+
+  std::ostringstream top_shape_ss;
+  for (int i = 0; i < static_cast<int>(top_shape.size()); ++i) {
+    if (i > 0) top_shape_ss << ", ";
+    top_shape_ss << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Pooling Reshape: input=[" << bottom[0]->shape(0)
+                      << "," << channels_ << "," << height_ << "," << width_
+                      << "] output=[" << top_shape_ss.str() << "]"
+                      << " pooled=[" << pooled_height_ << "," << pooled_width_ << "]";
 }
 
 void PoolingLayer::Forward_cpu(const std::vector<Blob*>& bottom,
@@ -93,6 +122,20 @@ void PoolingLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   float* top_data = top[0]->cpu_data();
   const int num = static_cast<int>(bottom[0]->shape(0));
   const int top_count = static_cast<int>(top[0]->count());
+
+  const char* pool_method_str = "UNKNOWN";
+  if (pool_method_ == caffe::PoolingParameter::MAX) {
+    pool_method_str = "MAX";
+  } else if (pool_method_ == caffe::PoolingParameter::AVE) {
+    pool_method_str = "AVE";
+  }
+  CAFFE_FFI_LAYER_LOG << "Pooling Forward: num=" << num
+                      << " pool_method=" << pool_method_str
+                      << " channels=" << channels_
+                      << " kernel=[" << kernel_h_ << "," << kernel_w_ << "]"
+                      << " pooled=[" << pooled_height_ << "," << pooled_width_ << "]"
+                      << " top_count=" << top_count;
+
   caffe_set_fp32(static_cast<size_t>(top_count), (pool_method_ == caffe::PoolingParameter::AVE) ? 0.0f : -std::numeric_limits<float>::max(), top_data);
 
   for (int n = 0; n < num; ++n) {

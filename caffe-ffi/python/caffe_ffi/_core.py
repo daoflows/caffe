@@ -2,495 +2,617 @@ from __future__ import annotations
 
 import logging
 import os
-import traceback
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 import numpy as np
 
 from . import _ffi_api
 
-import tvm_ffi
-
-_reg_logger = logging.getLogger("caffe_ffi.registration")
+_logger = logging.getLogger("caffe_ffi.core")
 
 
-class Blob(tvm_ffi.Object):
+def _import_tvm_ffi():
+    try:
+        import tvm_ffi
+        return tvm_ffi
+    except ImportError:
+        return None
 
-    _type_key = "caffe_ffi.Blob"
-    __slots__ = ['_py_shape', '_py_data', '_py_diff', '_py_name']
 
-    def __new__(cls, shape=None, handle=None):
-        inst = super().__new__(cls)
-        inst._py_shape = []
-        inst._py_data = None
-        inst._py_diff = None
-        inst._py_name = ""
-        return inst
+_tvm_ffi = _import_tvm_ffi()
+_NATIVE_MODE = _ffi_api.is_available() and _tvm_ffi is not None
 
-    @property
-    def _handle(self):
-        return self if self._is_native else None
+if _NATIVE_MODE:
+    _Object = _tvm_ffi.Object
+    _register_object = _tvm_ffi.register_object
+    _get_global_func = _tvm_ffi.get_global_func
+else:
+    _Object = object
+    _register_object = None
+    _get_global_func = None
 
-    @property
-    def _data(self):
-        return self._py_data
 
-    @_data.setter
-    def _data(self, value):
-        self._py_data = value
+def _noop_decorator(type_key):
+    def decorator(cls):
+        return cls
+    return decorator
 
-    @property
-    def _diff(self):
-        return self._py_diff
 
-    @_diff.setter
-    def _diff(self, value):
-        self._py_diff = value
+_reg = _register_object if _NATIVE_MODE else _noop_decorator
+
+
+def _get_fn(name: str):
+    if not _NATIVE_MODE:
+        return None
+    return _get_global_func(f"caffe_ffi.{name}", allow_missing=True)
+
+
+def _native_method(obj, name: str):
+    """Call a C++ registered method on an object, bypassing Python overrides."""
+    if not _NATIVE_MODE:
+        raise RuntimeError(f"Native method '{name}' not available in Python-only mode")
+    info = getattr(type(obj), '__tvm_ffi_type_info__', None)
+    if info is not None:
+        for m in info.methods:
+            if m.name == name:
+                bound = m.func
+                if not m.is_static:
+                    import types
+                    bound = types.MethodType(m.func, obj)
+                return bound
+    for parent_cls in type(obj).__mro__[1:]:
+        if name in parent_cls.__dict__:
+            attr = parent_cls.__dict__[name]
+            if callable(attr):
+                import types
+                if isinstance(attr, (staticmethod, classmethod)):
+                    return attr.__get__(obj, type(obj))
+                return types.MethodType(attr, obj)
+            return attr
+    raise AttributeError(f"Native method '{name}' not found on {type(obj).__name__}")
+
+
+@_reg("caffe_ffi.Blob")
+class Blob(_Object):
+    """N-dimensional tensor blob for storing network data and gradients.
+
+    A Blob wraps a C++ tensor via TVM FFI when the native extension is available,
+    providing zero-copy numpy interop through DLPack.
+
+    Parameters
+    ----------
+    shape : list of int, optional
+        Initial shape of the blob. If None, creates an empty blob (shape ()).
+    """
+
+    __slots__ = ('__dict__',)
 
     def __init__(self, shape: Optional[List[int]] = None, handle=None):
-        if self._is_native:
-            return
-        if handle is not None and not isinstance(handle, (list, tuple)):
-            if hasattr(handle, 'shape'):
-                self._py_shape = list(handle.shape)
-                self._py_data = np.zeros(self._py_shape, dtype=np.float32)
-                self._py_diff = np.zeros_like(self._py_data)
-                return
-        if _ffi_api.is_available():
-            new_blob_fn = _ffi_api.get_global_func("caffe_ffi.NewBlob")
-            if new_blob_fn is not None:
-                self.__init_handle_by_constructor__(new_blob_fn)
-                if shape is not None:
-                    Blob._native_reshape(self, list(shape))
-                return
-        self._init_python(shape)
+        if _NATIVE_MODE and handle is None:
+            ctor = _get_fn("NewBlob")
+            self.__init_handle_by_constructor__(ctor)
+            if shape is not None:
+                _native_method(self, 'Reshape')(list(shape))
+        elif not _NATIVE_MODE:
+            self._py_init(shape)
 
-    def _init_python(self, shape: Optional[List[int]]) -> None:
+    def _py_init(self, shape=None):
         if shape is None:
             shape = ()
         self._py_data = np.zeros(shape, dtype=np.float32)
         self._py_diff = np.zeros_like(self._py_data)
         self._py_shape = list(shape)
+        self._py_name = ""
 
     @property
     def _is_native(self) -> bool:
-        return self.__chandle__() != 0
+        return _NATIVE_MODE and self.__chandle__() != 0
 
-
-class Layer(tvm_ffi.Object):
-
-    _type_key = "caffe_ffi.Layer"
-    __slots__ = ['_py_blobs', '_py_name', '_py_type_str']
-
-    def __new__(cls, handle=None):
-        inst = super().__new__(cls)
-        inst._py_blobs = []
-        inst._py_name = ""
-        inst._py_type_str = ""
-        return inst
-
-    def __init__(self, handle=None):
+    @property
+    def shape(self) -> tuple:
         if self._is_native:
-            return
-
-    @property
-    def _is_native(self) -> bool:
-        return self.__chandle__() != 0
-
-
-class Net(tvm_ffi.Object):
-
-    _type_key = "caffe_ffi.Net"
-    __slots__ = ['_py_name', '_py_blobs', '_py_layers', '_py_blob_list',
-                 '_py_layer_list', '_py_input_blobs', '_py_output_blobs',
-                 '_py_input_blob_names', '_py_output_blob_names']
-
-    def __new__(cls, param=None, handle=None):
-        inst = super().__new__(cls)
-        inst._py_name = ""
-        inst._py_blobs = {}
-        inst._py_layers = {}
-        inst._py_blob_list = []
-        inst._py_layer_list = []
-        inst._py_input_blobs = []
-        inst._py_output_blobs = []
-        inst._py_input_blob_names = []
-        inst._py_output_blob_names = []
-        return inst
-
-    def __init__(self, param=None, handle=None):
-        if self._is_native:
-            return
-        if param is not None and isinstance(param, (str, os.PathLike)) and _ffi_api.is_available():
-            param_str = str(param)
-            if os.path.isfile(param_str):
-                ctor = _ffi_api.get_global_func("caffe_ffi.NewNetFromFile")
-                if ctor is None:
-                    raise RuntimeError("caffe_ffi.NewNetFromFile not found")
-                self.__init_handle_by_constructor__(ctor, param_str)
-                return
-            else:
-                ctor = _ffi_api.get_global_func("caffe_ffi.NewNetFromProtoString")
-                if ctor is None:
-                    raise RuntimeError("caffe_ffi.NewNetFromProtoString not found")
-                self.__init_handle_by_constructor__(ctor, param_str)
-                return
-
-    @property
-    def _is_native(self) -> bool:
-        return self.__chandle__() != 0
-
-
-def _register_types():
-    if not _ffi_api.is_available():
-        _reg_logger.debug("FFI not available, skipping type registration (Python-only mode)")
-        return
-    try:
-        _ffi_api.registry.register_object(Blob._type_key, Blob)
-        _ffi_api.registry.register_object(Layer._type_key, Layer)
-        _ffi_api.registry.register_object(Net._type_key, Net)
-    except Exception as e:
-        _reg_logger.warning(
-            "Failed to register native object types: %s. "
-            "Native C++ methods will not be available; falling back to Python-only mode.\n%s",
-            e, traceback.format_exc(),
-        )
-        return
-    _add_python_wrappers()
-
-
-def _add_python_wrappers():
-    Blob._native_shape = getattr(Blob, 'shape', None)
-    Blob._native_num_axes = getattr(Blob, 'num_axes', None)
-    Blob._native_count = getattr(Blob, 'count', None)
-    Blob._native_reshape = getattr(Blob, 'Reshape', None)
-    Blob._native_get_data = getattr(Blob, 'get_data', None)
-    Blob._native_set_data = getattr(Blob, 'set_data', None)
-    Blob._native_get_diff = getattr(Blob, 'get_diff', None)
-    Blob._native_set_diff = getattr(Blob, 'set_diff', None)
-    Blob._native_name = getattr(Blob, 'name', None)
-    Blob._native_set_name = getattr(Blob, 'set_name', None)
-    Blob._native_construction_backtrace = getattr(Blob, 'construction_backtrace', None)
-    Blob._blob_data_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDataTensor")
-    Blob._blob_diff_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDiffTensor")
-    Blob._blob_update_fn = _ffi_api.get_global_func("caffe_ffi.BlobUpdate")
-
-    def _blob_shape(self):
-        if self._is_native and Blob._native_shape is not None:
-            return tuple(Blob._native_shape(self))
+            return tuple(_native_method(self, 'shape')())
         return tuple(self._py_shape)
 
-    def _blob_num_axes(self):
-        if self._is_native and Blob._native_num_axes is not None:
-            return Blob._native_num_axes(self)
-        return len(self._py_shape)
+    @property
+    def ndim(self) -> int:
+        return len(self.shape)
 
-    def _blob_count(self):
-        if self._is_native and Blob._native_count is not None:
-            return Blob._native_count(self)
-        return int(np.prod(self._py_shape)) if self._py_shape else 0
+    @property
+    def num_axes(self) -> int:
+        return self.ndim
 
-    def _blob_reshape(self, shape):
-        if self._is_native and Blob._native_reshape is not None:
-            Blob._native_reshape(self, list(shape))
+    @property
+    def size(self) -> int:
+        return self.count()
+
+    def count(self, start_axis: int = 0, end_axis: Optional[int] = None) -> int:
+        if self._is_native:
+            if end_axis is None:
+                return int(_native_method(self, 'count')())
+            s = self.shape
+            if end_axis < 0:
+                end_axis += len(s)
+            result = 1
+            for i in range(start_axis, end_axis + 1):
+                result *= s[i]
+            return result
+        s = self._py_shape
+        if end_axis is None:
+            end_axis = len(s)
+        elif end_axis < 0:
+            end_axis += len(s)
+        result = 1
+        for i in range(start_axis, end_axis):
+            result *= s[i]
+        return result
+
+    def Reshape(self, shape: List[int]) -> None:
+        if self._is_native:
+            _native_method(self, 'Reshape')(list(shape))
         else:
-            self._py_data = np.zeros(shape, dtype=np.float32)
+            shape_list = list(shape)
+            self._py_data = np.zeros(shape_list, dtype=np.float32)
             self._py_diff = np.zeros_like(self._py_data)
-            self._py_shape = list(shape)
+            self._py_shape = shape_list
 
-    def _blob_get_data(self):
-        if self._is_native and Blob._native_get_data is not None:
-            return list(Blob._native_get_data(self))
-        return self._py_data.flatten().tolist() if self._py_data is not None else []
-
-    def _blob_set_data(self, data):
-        if self._is_native and Blob._native_set_data is not None:
-            Blob._native_set_data(self, data)
-        else:
-            self._py_data = np.array(data, dtype=np.float32).reshape(self._py_shape)
-
-    def _blob_get_diff(self):
-        if self._is_native and Blob._native_get_diff is not None:
-            return list(Blob._native_get_diff(self))
-        return self._py_diff.flatten().tolist() if self._py_diff is not None else []
-
-    def _blob_set_diff(self, diff):
-        if self._is_native and Blob._native_set_diff is not None:
-            Blob._native_set_diff(self, diff)
-        else:
-            self._py_diff = np.array(diff, dtype=np.float32).reshape(self._py_shape)
-
-    def _blob_get_name(self):
-        if self._is_native and Blob._native_name is not None:
-            return Blob._native_name(self)
+    @property
+    def name(self) -> str:
+        if self._is_native:
+            return str(_native_method(self, 'name')())
         return getattr(self, '_py_name', '')
 
-    def _blob_set_name(self, value):
-        if self._is_native and Blob._native_set_name is not None:
-            Blob._native_set_name(self, value)
+    @name.setter
+    def name(self, value: str) -> None:
+        if self._is_native:
+            _native_method(self, 'set_name')(str(value))
         else:
             self._py_name = value
 
-    Blob.shape = property(_blob_shape)
-    Blob.num_axes = property(_blob_num_axes)
-    Blob.ndim = property(_blob_num_axes)
-    Blob.size = property(_blob_count)
-    Blob.count = _blob_count
-    Blob.Reshape = _blob_reshape
-    Blob.get_data = _blob_get_data
-    Blob.set_data = _blob_set_data
-    Blob.get_diff = _blob_get_diff
-    Blob.set_diff = _blob_set_diff
-    Blob.name = property(_blob_get_name, _blob_set_name)
-
-    def _blob_construction_backtrace(self):
-        if self._is_native and Blob._native_construction_backtrace is not None:
-            return Blob._native_construction_backtrace(self)
-        return "(backtrace not available: Python-only mode)"
-
-    Blob.construction_backtrace = property(_blob_construction_backtrace)
-
-    def _blob_data_tensor(self):
-        if self._is_native and Blob._blob_data_tensor_fn is not None:
-            return np.from_dlpack(Blob._blob_data_tensor_fn(self))
+    @property
+    def data_tensor(self) -> np.ndarray:
+        """Zero-copy numpy view of the data tensor (modifications affect C++ memory)."""
+        if self._is_native:
+            fn = _get_fn("BlobDataTensor")
+            return np.from_dlpack(fn(self))
         return self._py_data
 
-    def _blob_diff_tensor(self):
-        if self._is_native and Blob._blob_diff_tensor_fn is not None:
-            return np.from_dlpack(Blob._blob_diff_tensor_fn(self))
+    @property
+    def diff_tensor(self) -> np.ndarray:
+        """Zero-copy numpy view of the diff tensor (modifications affect C++ memory)."""
+        if self._is_native:
+            fn = _get_fn("BlobDiffTensor")
+            return np.from_dlpack(fn(self))
         return self._py_diff
 
-    def _blob_update(self):
-        if self._is_native and Blob._blob_update_fn is not None:
-            Blob._blob_update_fn(self)
+    @property
+    def data(self) -> np.ndarray:
+        """Get data as numpy array (returns a copy for safety)."""
+        return self.data_tensor.copy()
+
+    @data.setter
+    def data(self, value: np.ndarray) -> None:
+        """Set data from numpy array."""
+        arr = np.asarray(value, dtype=np.float32)
+        if tuple(arr.shape) != self.shape:
+            self.Reshape(list(arr.shape))
+        self.data_tensor[:] = arr
+
+    @property
+    def diff(self) -> np.ndarray:
+        """Get diff as numpy array (returns a copy for safety)."""
+        return self.diff_tensor.copy()
+
+    @diff.setter
+    def diff(self, value: np.ndarray) -> None:
+        """Set diff from numpy array."""
+        arr = np.asarray(value, dtype=np.float32)
+        if tuple(arr.shape) != self.shape:
+            self.Reshape(list(arr.shape))
+        self.diff_tensor[:] = arr
+
+    def Update(self) -> None:
+        """Update data by subtracting diff (data -= diff)."""
+        if self._is_native:
+            fn = _get_fn("BlobUpdate")
+            fn(self)
         elif self._py_data is not None and self._py_diff is not None:
             self._py_data -= self._py_diff
 
-    def _blob_zero(self):
-        if self._is_native and Blob._native_set_data is not None:
-            shape = self.shape
-            zeros = [0.0] * int(np.prod(shape)) if shape else []
-            Blob._native_set_data(self, zeros)
-        elif self._py_data is not None:
-            self._py_data.fill(0)
-            if self._py_diff is not None:
-                self._py_diff.fill(0)
+    def zero(self) -> Blob:
+        """Set data and diff to all zeros."""
+        self.data_tensor.fill(0)
+        self.diff_tensor.fill(0)
+        return self
 
-    def _blob_fill(self, value):
-        if self._is_native and Blob._native_set_data is not None:
-            shape = self.shape
-            data = [float(value)] * int(np.prod(shape)) if shape else []
-            Blob._native_set_data(self, data)
-        elif self._py_data is not None:
-            self._py_data.fill(float(value))
-            if self._py_diff is not None:
-                self._py_diff.fill(0)
+    def fill(self, value: float) -> Blob:
+        """Fill data with a constant value."""
+        self.data_tensor.fill(np.float32(value))
+        self.diff_tensor.fill(0)
+        return self
 
-    def _blob_copy_from(self, other):
+    def copy_from(self, other) -> Blob:
+        """Copy data from another blob or numpy array."""
         if isinstance(other, Blob):
-            other_data = other.data_tensor if other._is_native or other._py_data is not None else other.data
+            other_data = other.data_tensor
         else:
             other_data = np.asarray(other, dtype=np.float32)
-        if self._is_native and Blob._native_set_data is not None:
-            Blob._native_set_data(self, other_data.flatten().tolist())
-        elif self._py_data is not None:
-            self._py_data[:] = other_data.reshape(self._py_shape)
+        if tuple(other_data.shape) != self.shape:
+            self.Reshape(list(other_data.shape))
+        self.data_tensor[:] = other_data
+        return self
 
-    def _blob_from_numpy(self, arr):
+    def from_numpy(self, arr: np.ndarray, set_diff: bool = False) -> Blob:
+        """Reshape blob and set data from numpy array."""
         arr = np.asarray(arr, dtype=np.float32)
-        if self._is_native:
-            if tuple(arr.shape) != self.shape:
-                self.Reshape(list(arr.shape))
-            Blob._native_set_data(self, arr.flatten().tolist())
+        self.Reshape(list(arr.shape))
+        if set_diff:
+            self.diff = arr
         else:
-            self._py_shape = list(arr.shape)
-            self._py_data = arr.copy()
-            self._py_diff = np.zeros_like(arr)
+            self.data = arr
+        return self
 
-    def _blob_to_numpy(self):
-        return self.data_tensor.copy()
+    def to_numpy(self, get_diff: bool = False) -> np.ndarray:
+        """Convert blob to numpy array (returns a copy)."""
+        return self.diff_tensor.copy() if get_diff else self.data_tensor.copy()
 
-    def _blob_data_property(self):
-        if self._is_native and Blob._blob_data_tensor_fn is not None:
-            return np.from_dlpack(Blob._blob_data_tensor_fn(self)).copy()
-        return self._blob_get_data_np()
+    def get_data(self) -> List[float]:
+        if self._is_native:
+            return list(_native_method(self, 'get_data')())
+        return self._py_data.flatten().tolist()
 
-    def _blob_diff_property(self):
-        if self._is_native and Blob._blob_diff_tensor_fn is not None:
-            return np.from_dlpack(Blob._blob_diff_tensor_fn(self)).copy()
-        return self._blob_get_diff_np()
+    def set_data(self, data) -> None:
+        if self._is_native:
+            _native_method(self, 'set_data')(data)
+        else:
+            self._py_data = np.array(data, dtype=np.float32).reshape(self._py_shape)
 
-    def _blob_get_data_np(self):
-        data_list = self.get_data()
-        if not data_list:
-            return np.zeros(self.shape, dtype=np.float32)
-        return np.array(data_list, dtype=np.float32).reshape(self.shape)
+    def get_diff(self) -> List[float]:
+        if self._is_native:
+            return list(_native_method(self, 'get_diff')())
+        return self._py_diff.flatten().tolist()
 
-    def _blob_get_diff_np(self):
-        diff_list = self.get_diff()
-        if not diff_list:
-            return np.zeros(self.shape, dtype=np.float32)
-        return np.array(diff_list, dtype=np.float32).reshape(self.shape)
+    def set_diff(self, diff) -> None:
+        if self._is_native:
+            _native_method(self, 'set_diff')(diff)
+        else:
+            self._py_diff = np.array(diff, dtype=np.float32).reshape(self._py_shape)
 
-    Blob.data_tensor = property(_blob_data_tensor)
-    Blob.diff_tensor = property(_blob_diff_tensor)
-    Blob.data = property(_blob_data_property)
-    Blob.diff = property(_blob_diff_property)
-    Blob.Update = _blob_update
-    Blob.zero = _blob_zero
-    Blob.fill = _blob_fill
-    Blob.copy_from = _blob_copy_from
-    Blob.from_numpy = _blob_from_numpy
-    Blob.to_numpy = _blob_to_numpy
+    @property
+    def construction_backtrace(self) -> str:
+        if self._is_native:
+            return str(_native_method(self, 'construction_backtrace')())
+        return "(backtrace not available: Python-only mode)"
 
-    Layer._native_type = getattr(Layer, 'type', None)
-    Layer._native_blobs_array = getattr(Layer, 'blobs_array', None)
-    Layer._native_name = getattr(Layer, 'name', None)
+    def __repr__(self) -> str:
+        return f"Blob(shape={self.shape}, dtype=float32)"
 
-    def _layer_type(self):
-        if self._is_native and Layer._native_type is not None:
-            return Layer._native_type(self)
+
+@_reg("caffe_ffi.Layer")
+class Layer(_Object):
+    """Neural network layer.
+
+    Layers are typically created by Net during network construction.
+    Each layer has a type, name, and parameter blobs (weights/biases).
+    """
+
+    __slots__ = ('__dict__',)
+
+    def __init__(self, handle=None):
+        if not _NATIVE_MODE:
+            self._py_name = ""
+            self._py_type_str = ""
+            self._py_blobs = []
+
+    @property
+    def _is_native(self) -> bool:
+        return _NATIVE_MODE and self.__chandle__() != 0
+
+    @property
+    def type(self) -> str:
+        if self._is_native:
+            return str(_native_method(self, 'type')())
         return getattr(self, '_py_type_str', '')
 
-    def _layer_blobs(self):
-        if self._is_native and Layer._native_blobs_array is not None:
-            return list(Layer._native_blobs_array(self))
-        return list(self._py_blobs)
-
-    def _layer_get_name(self):
-        if self._is_native and Layer._native_name is not None:
-            return Layer._native_name(self)
+    @property
+    def name(self) -> str:
+        if self._is_native:
+            return str(_native_method(self, 'name')())
         return getattr(self, '_py_name', '')
 
-    def _layer_set_name(self, value):
-        self._py_name = value
+    @property
+    def blobs(self) -> List[Blob]:
+        if self._is_native:
+            return list(_native_method(self, 'blobs_array')())
+        return list(getattr(self, '_py_blobs', []))
 
-    Layer.type = property(_layer_type)
-    Layer.blobs = property(_layer_blobs)
-    Layer.name = property(_layer_get_name, _layer_set_name)
+    def __repr__(self) -> str:
+        name = self.name
+        if name:
+            return f"Layer(name='{name}', type='{self.type}')"
+        return f"Layer(type='{self.type}')"
 
-    Net._native_name = getattr(Net, 'name', None)
-    Net._native_forward = getattr(Net, 'Forward', None)
-    Net._native_blobs_array = getattr(Net, 'blobs_array', None)
-    Net._native_layers_array = getattr(Net, 'layers_array', None)
-    Net._native_input_blobs = getattr(Net, 'input_blobs_array', None)
-    Net._native_output_blobs = getattr(Net, 'output_blobs_array', None)
-    Net._native_blob_by_name = getattr(Net, 'blob_by_name', None)
-    Net._native_layer_by_name = getattr(Net, 'layer_by_name', None)
-    Net._native_has_blob = getattr(Net, 'has_blob', None)
-    Net._native_has_layer = getattr(Net, 'has_layer', None)
-    Net._native_copy_trained = getattr(Net, 'CopyTrainedLayersFrom', None)
-    Net._native_input_blob_names = getattr(Net, 'input_blob_names', None)
-    Net._native_output_blob_names = getattr(Net, 'output_blob_names', None)
-    Net._native_blob_names = getattr(Net, 'blob_names', None)
-    Net._native_layer_names = getattr(Net, 'layer_names', None)
 
-    def _net_name(self):
-        if self._is_native and Net._native_name is not None:
-            return Net._native_name(self)
+@_reg("caffe_ffi.Net")
+class Net(_Object):
+    """Neural network container.
+
+    A Net represents a complete neural network with layers and blobs
+    connected in a directed acyclic graph.
+
+    Parameters
+    ----------
+    param : str or Path, optional
+        Path to a .prototxt file, or a prototxt string defining the network.
+    """
+
+    __slots__ = ('__dict__',)
+
+    def __init__(self, param: Optional[Union[str, os.PathLike]] = None, handle=None):
+        if _NATIVE_MODE and handle is None and param is not None:
+            param_str = str(param)
+            if os.path.isfile(param_str):
+                ctor = _get_fn("NewNetFromFile")
+                if ctor is None:
+                    raise RuntimeError("caffe_ffi.NewNetFromFile not available")
+                self.__init_handle_by_constructor__(ctor, param_str)
+            else:
+                ctor = _get_fn("NewNetFromProtoString")
+                if ctor is None:
+                    raise RuntimeError("caffe_ffi.NewNetFromProtoString not available")
+                self.__init_handle_by_constructor__(ctor, param_str)
+        elif not _NATIVE_MODE:
+            self._py_init(param)
+
+    def _py_init(self, param=None):
+        self._py_name = getattr(param, 'name', '') if param else ''
+        self._py_blobs = {}
+        self._py_layers = {}
+        self._py_blob_list = []
+        self._py_layer_list = []
+        self._py_input_blobs = []
+        self._py_output_blobs = []
+        self._py_input_blob_names = []
+        self._py_output_blob_names = []
+
+    @property
+    def _is_native(self) -> bool:
+        return _NATIVE_MODE and self.__chandle__() != 0
+
+    @property
+    def name(self) -> str:
+        if self._is_native:
+            return str(_native_method(self, 'name')())
         return getattr(self, '_py_name', '')
 
-    def _net_forward(self, inputs=None):
-        if self._is_native and Net._native_forward is not None:
+    def Forward(self, inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Blob]:
+        if inputs is None:
+            inputs = {}
+        if self._is_native:
             input_map = {}
-            if inputs:
-                for k, v in inputs.items():
-                    if isinstance(v, np.ndarray):
-                        input_map[k] = v.flatten().tolist()
-                    else:
-                        input_map[k] = v
-            return Net._native_forward(self, input_map)
+            for k, v in inputs.items():
+                if isinstance(v, np.ndarray):
+                    input_map[k] = v.flatten().tolist()
+                elif isinstance(v, Blob):
+                    input_map[k] = v.get_data()
+                else:
+                    input_map[k] = v
+            result = _native_method(self, 'Forward')(input_map)
+            return {str(k): v for k, v in result.items()}
+        return self._py_forward(inputs)
+
+    def _py_forward(self, inputs):
         return {}
 
-    def _net_blobs_array(self):
-        if self._is_native and Net._native_blobs_array is not None:
-            return list(Net._native_blobs_array(self))
-        return list(self._py_blob_list)
+    def forward(self, input_dict: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, np.ndarray]:
+        """Run forward pass and return output blobs as numpy arrays.
 
-    def _net_layers_array(self):
-        if self._is_native and Net._native_layers_array is not None:
-            return list(Net._native_layers_array(self))
-        return list(self._py_layer_list)
+        Parameters
+        ----------
+        input_dict : dict of str to ndarray, optional
+            Mapping from input blob names to numpy arrays.
 
-    def _net_input_blobs(self):
-        if self._is_native and Net._native_input_blobs is not None:
-            return list(Net._native_input_blobs(self))
-        return list(self._py_input_blobs)
+        Returns
+        -------
+        dict of str to ndarray
+            Mapping from output blob names to numpy arrays (copies).
+        """
+        if input_dict is None:
+            input_dict = {}
 
-    def _net_output_blobs(self):
-        if self._is_native and Net._native_output_blobs is not None:
-            return list(Net._native_output_blobs(self))
-        return list(self._py_output_blobs)
+        if self._is_native:
+            for name, arr in input_dict.items():
+                try:
+                    blob = self.blob_by_name(name)
+                    blob.data = np.asarray(arr, dtype=np.float32)
+                except (KeyError, RuntimeError):
+                    pass
 
-    def _net_blob_by_name(self, name):
-        if self._is_native and Net._native_blob_by_name is not None:
+            result_map = self.Forward()
+            result = {}
+            if result_map:
+                for name, blob in result_map.items():
+                    result[str(name)] = blob.data
+            else:
+                output_blobs = self.output_blobs_array()
+                output_names = self.output_blob_names()
+                for i, blob in enumerate(output_blobs):
+                    name = str(output_names[i]) if i < len(output_names) else f"output_{i}"
+                    result[name] = blob.data
+            return result
+        return self._forward_pure_python(input_dict)
+
+    def forward_all(self, **kwargs: np.ndarray) -> Dict[str, np.ndarray]:
+        """Convenience wrapper for forward with keyword arguments."""
+        return self.forward(kwargs)
+
+    def blobs_array(self) -> List[Blob]:
+        if self._is_native:
+            return list(_native_method(self, 'blobs_array')())
+        return list(getattr(self, '_py_blob_list', []))
+
+    def layers_array(self) -> List[Layer]:
+        if self._is_native:
+            return list(_native_method(self, 'layers_array')())
+        return list(getattr(self, '_py_layer_list', []))
+
+    def input_blobs_array(self) -> List[Blob]:
+        if self._is_native:
+            return list(_native_method(self, 'input_blobs_array')())
+        return list(getattr(self, '_py_input_blobs', []))
+
+    def output_blobs_array(self) -> List[Blob]:
+        if self._is_native:
+            return list(_native_method(self, 'output_blobs_array')())
+        return list(getattr(self, '_py_output_blobs', []))
+
+    def blob_names(self) -> List[str]:
+        if self._is_native:
+            return [str(n) for n in _native_method(self, 'blob_names')()]
+        return list(getattr(self, '_py_blobs', {}).keys())
+
+    def layer_names(self) -> List[str]:
+        if self._is_native:
+            return [str(n) for n in _native_method(self, 'layer_names')()]
+        return list(getattr(self, '_py_layers', {}).keys())
+
+    def input_blob_names(self) -> List[str]:
+        if self._is_native:
+            return [str(n) for n in _native_method(self, 'input_blob_names')()]
+        return list(getattr(self, '_py_input_blob_names', []))
+
+    def output_blob_names(self) -> List[str]:
+        if self._is_native:
+            return [str(n) for n in _native_method(self, 'output_blob_names')()]
+        return list(getattr(self, '_py_output_blob_names', []))
+
+    def blob_by_name(self, name: str) -> Blob:
+        if self._is_native:
             try:
-                return Net._native_blob_by_name(self, name)
+                return _native_method(self, 'blob_by_name')(str(name))
             except (RuntimeError, AttributeError):
                 raise KeyError(f"Blob '{name}' not found")
-        if name in self._py_blobs:
+        if name in getattr(self, '_py_blobs', {}):
             return self._py_blobs[name]
         raise KeyError(f"Blob '{name}' not found")
 
-    def _net_layer_by_name(self, name):
-        if self._is_native and Net._native_layer_by_name is not None:
+    def layer_by_name(self, name: str) -> Layer:
+        if self._is_native:
             try:
-                return Net._native_layer_by_name(self, name)
+                return _native_method(self, 'layer_by_name')(str(name))
             except (RuntimeError, AttributeError):
                 raise KeyError(f"Layer '{name}' not found")
-        if name in self._py_layers:
+        if name in getattr(self, '_py_layers', {}):
             return self._py_layers[name]
         raise KeyError(f"Layer '{name}' not found")
 
-    def _net_has_blob(self, name):
-        if self._is_native and Net._native_has_blob is not None:
-            return Net._native_has_blob(self, name)
-        return name in self._py_blobs
+    def has_blob(self, name: str) -> bool:
+        if self._is_native:
+            return bool(_native_method(self, 'has_blob')(str(name)))
+        return name in getattr(self, '_py_blobs', {})
 
-    def _net_has_layer(self, name):
-        if self._is_native and Net._native_has_layer is not None:
-            return Net._native_has_layer(self, name)
-        return name in self._py_layers
+    def has_layer(self, name: str) -> bool:
+        if self._is_native:
+            return bool(_native_method(self, 'has_layer')(str(name)))
+        return name in getattr(self, '_py_layers', {})
 
-    def _net_input_blob_names(self):
-        if self._is_native and Net._native_input_blob_names is not None:
-            return list(Net._native_input_blob_names(self))
-        return list(self._py_input_blob_names)
+    def num_inputs(self) -> int:
+        if self._is_native:
+            return int(_native_method(self, 'num_inputs')())
+        return len(getattr(self, '_py_input_blobs', []))
 
-    def _net_output_blob_names(self):
-        if self._is_native and Net._native_output_blob_names is not None:
-            return list(Net._native_output_blob_names(self))
-        return list(self._py_output_blob_names)
+    def num_outputs(self) -> int:
+        if self._is_native:
+            return int(_native_method(self, 'num_outputs')())
+        return len(getattr(self, '_py_output_blobs', []))
 
-    def _net_blob_names(self):
-        if self._is_native and Net._native_blob_names is not None:
-            return list(Net._native_blob_names(self))
-        return list(self._py_blobs.keys())
+    @property
+    def blobs_dict(self) -> Dict[str, Blob]:
+        result = {}
+        names = self.blob_names()
+        blobs = self.blobs_array()
+        for i, blob in enumerate(blobs):
+            if i < len(names):
+                result[names[i]] = blob
+            else:
+                result[f"blob_{i}"] = blob
+        return result
 
-    def _net_layer_names(self):
-        if self._is_native and Net._native_layer_names is not None:
-            return list(Net._native_layer_names(self))
-        return list(self._py_layers.keys())
+    @property
+    def layers_dict(self) -> Dict[str, Layer]:
+        result = {}
+        names = self.layer_names()
+        layers = self.layers_array()
+        for i, layer in enumerate(layers):
+            if i < len(names):
+                result[names[i]] = layer
+            else:
+                result[f"layer_{i}"] = layer
+        return result
 
-    def _net_copy_trained(self, trained_filename):
-        if self._is_native and Net._native_copy_trained is not None:
-            Net._native_copy_trained(self, str(trained_filename))
+    def CopyTrainedLayersFrom(self, trained_filename: Union[str, Path]) -> None:
+        if self._is_native:
+            _native_method(self, 'CopyTrainedLayersFrom')(str(trained_filename))
+        else:
+            self._copy_from_pure_python(trained_filename)
 
-    Net.name = property(_net_name)
-    Net.Forward = _net_forward
-    Net.blobs_array = _net_blobs_array
-    Net.layers_array = _net_layers_array
-    Net.input_blobs_array = _net_input_blobs
-    Net.output_blobs_array = _net_output_blobs
-    Net.blob_by_name = _net_blob_by_name
-    Net.layer_by_name = _net_layer_by_name
-    Net.has_blob = _net_has_blob
-    Net.has_layer = _net_has_layer
-    Net.input_blob_names = _net_input_blob_names
-    Net.output_blob_names = _net_output_blob_names
-    Net.blob_names = _net_blob_names
-    Net.layer_names = _net_layer_names
-    Net.CopyTrainedLayersFrom = _net_copy_trained
+    def copy_from(self, trained_filename: Union[str, Path]) -> None:
+        """Copy trained layers from a caffemodel file."""
+        self.CopyTrainedLayersFrom(trained_filename)
 
+    def _copy_from_pure_python(self, trained_filename):
+        from .io import read_net_from_binary
+        trained_net_param = read_net_from_binary(trained_filename)
+        trained_layer_map = {layer.name: layer for layer in trained_net_param.layer}
+        for layer in self.layers_array():
+            layer_name = layer.name
+            if not layer_name or layer_name not in trained_layer_map:
+                continue
+            source_layer = trained_layer_map[layer_name]
+            target_blobs = layer.blobs
+            num_blobs_to_copy = min(len(target_blobs), len(source_layer.blobs))
+            for j in range(num_blobs_to_copy):
+                source_blob_proto = source_layer.blobs[j]
+                target_blob = target_blobs[j]
+                if source_blob_proto.HasField('shape') and source_blob_proto.shape.dim:
+                    dims = list(source_blob_proto.shape.dim)
+                else:
+                    dims = [source_blob_proto.num, source_blob_proto.channels,
+                           source_blob_proto.height, source_blob_proto.width]
+                    dims = [d for d in dims if d != 0]
+                data_list = None
+                if source_blob_proto.data:
+                    data_list = list(source_blob_proto.data)
+                elif source_blob_proto.double_data:
+                    data_list = [float(v) for v in source_blob_proto.double_data]
+                if not dims and data_list:
+                    dims = [len(data_list)]
+                if dims:
+                    target_blob.Reshape(dims)
+                if data_list:
+                    target_blob.data = np.array(data_list, dtype=np.float32).reshape(target_blob.shape)
 
-_register_types()
+    def _forward_pure_python(self, input_dict):
+        for name, arr in input_dict.items():
+            if name in getattr(self, '_py_blobs', {}):
+                self._py_blobs[name].from_numpy(arr)
+        result = {}
+        for blob in getattr(self, '_py_output_blobs', []):
+            result[blob.name] = blob.data
+        return result
+
+    def __getitem__(self, name: str) -> Blob:
+        return self.blob_by_name(name)
+
+    def __contains__(self, name: str) -> bool:
+        return self.has_blob(name)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.blobs_dict.keys())
+
+    def __len__(self) -> int:
+        return len(self.blobs_array())
+
+    def __repr__(self) -> str:
+        return f"Net(name='{self.name}', {len(self.blobs_array())} blobs, {len(self.layers_array())} layers)"

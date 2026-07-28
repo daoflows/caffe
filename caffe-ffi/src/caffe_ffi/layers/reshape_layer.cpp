@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <vector>
 
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -14,6 +16,16 @@ void ReshapeLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   const caffe::ReshapeParameter& param = this->layer_param_.reshape_param();
   axis_ = param.axis();
   num_axes_ = param.num_axes();
+
+  std::ostringstream shape_ss;
+  const caffe::BlobShape& shape = param.shape();
+  for (int i = 0; i < shape.dim_size(); ++i) {
+    if (i > 0) shape_ss << ", ";
+    shape_ss << shape.dim(i);
+  }
+  CAFFE_FFI_LAYER_LOG << "Reshape LayerSetUp: axis=" << axis_
+                      << " num_axes=" << num_axes_
+                      << " shape=[" << shape_ss.str() << "]";
 }
 
 void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
@@ -83,6 +95,23 @@ void ReshapeLayer::Reshape(const std::vector<Blob*>& bottom,
   }
 
   top[0]->Reshape(top_shape);
+
+  std::ostringstream bottom_shape_ss;
+  for (int i = 0; i < input_num_axes; ++i) {
+    if (i > 0) bottom_shape_ss << ", ";
+    bottom_shape_ss << input_blob->shape(i);
+  }
+  std::ostringstream top_shape_ss;
+  for (int i = 0; i < static_cast<int>(top_shape.size()); ++i) {
+    if (i > 0) top_shape_ss << ", ";
+    top_shape_ss << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Reshape Reshape: start_axis=" << start_axis
+                      << " end_axis=" << end_axis
+                      << " inferred_axis=" << inferred_axis
+                      << " input=[" << bottom_shape_ss.str() << "]"
+                      << " output=[" << top_shape_ss.str() << "]"
+                      << " count=" << top[0]->count();
 }
 
 void ReshapeLayer::Forward_cpu(const std::vector<Blob*>& bottom,
@@ -90,6 +119,8 @@ void ReshapeLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   const float* bottom_data = bottom[0]->cpu_data();
   float* top_data = top[0]->cpu_data();
   const int64_t count = bottom[0]->count();
+  CAFFE_FFI_LAYER_LOG << "Reshape Forward: count=" << count
+                      << " inplace=" << (bottom[0] == top[0] ? "true" : "false");
   if (bottom[0] != top[0]) {
     std::memcpy(top_data, bottom_data, sizeof(float) * count);
   }

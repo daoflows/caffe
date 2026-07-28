@@ -15,7 +15,7 @@ class InputLayer : public Layer {
 
   explicit InputLayer(const caffe::LayerParameter& param) : Layer(param) {}
   void LayerSetUp(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
-  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override {}
+  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
 
   const char* type() const override { return "Input"; }
   int ExactNumBottomBlobs() const override { return 0; }
@@ -24,7 +24,7 @@ class InputLayer : public Layer {
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL("caffe_ffi.InputLayer", InputLayer, Layer);
 
  protected:
-  void Forward_cpu(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override {}
+  void Forward_cpu(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
 };
 
 }  // namespace caffe_ffi

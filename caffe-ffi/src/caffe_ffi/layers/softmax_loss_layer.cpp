@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 #include <vector>
 
 #include <tvm/ffi/memory.h>
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 #include "caffe_ffi/math_utils.hpp"
 
 namespace caffe_ffi {
@@ -24,6 +26,11 @@ void SoftmaxWithLossLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   softmax_axis_ = bottom[0]->CanonicalAxisIndex(
       this->layer_param_.softmax_param().axis());
   label_axis_ = softmax_axis_;
+
+  CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss LayerSetUp: softmax_axis_=" << softmax_axis_
+                      << " label_axis_=" << label_axis_
+                      << " has_ignore_label_=" << has_ignore_label_
+                      << " ignore_label_=" << (has_ignore_label_ ? ignore_label_ : -1);
 }
 
 void SoftmaxWithLossLayer::Reshape(const std::vector<Blob*>& bottom,
@@ -33,6 +40,13 @@ void SoftmaxWithLossLayer::Reshape(const std::vector<Blob*>& bottom,
     prob_shape.push_back(bottom[0]->shape(i));
   }
   prob_ = make_object<Blob>(prob_shape);
+
+  std::ostringstream prob_shape_ss;
+  for (size_t i = 0; i < prob_shape.size(); ++i) {
+    if (i > 0) prob_shape_ss << ", ";
+    prob_shape_ss << prob_shape[i];
+  }
+  CAFFE_FFI_TENSOR_LOG << "SoftmaxWithLoss: created prob_ blob shape=[" << prob_shape_ss.str() << "]";
 
   if (bottom.size() == 2) {
     TVM_FFI_ICHECK_EQ(bottom[0]->num_axes(), bottom[1]->num_axes())
@@ -54,6 +68,7 @@ void SoftmaxWithLossLayer::Reshape(const std::vector<Blob*>& bottom,
   std::vector<int64_t> mult_dims = {bottom[0]->shape(softmax_axis_)};
   sum_multiplier_ = make_object<Blob>(mult_dims);
   caffe_set_fp32(static_cast<size_t>(sum_multiplier_->count()), 1.0f, sum_multiplier_->cpu_data());
+  CAFFE_FFI_TENSOR_LOG << "SoftmaxWithLoss: created sum_multiplier_ shape=[" << mult_dims[0] << "] (initialized to 1.0)";
 
   std::vector<int64_t> scale_dims;
   for (int i = 0; i < bottom[0]->num_axes(); ++i) {
@@ -65,14 +80,35 @@ void SoftmaxWithLossLayer::Reshape(const std::vector<Blob*>& bottom,
   }
   scale_ = make_object<Blob>(scale_dims);
 
+  std::ostringstream scale_shape_ss;
+  for (size_t i = 0; i < scale_dims.size(); ++i) {
+    if (i > 0) scale_shape_ss << ", ";
+    scale_shape_ss << scale_dims[i];
+  }
+  CAFFE_FFI_TENSOR_LOG << "SoftmaxWithLoss: created scale_ blob shape=[" << scale_shape_ss.str() << "]";
+
+  std::ostringstream bottom0_shape_ss;
+  for (int i = 0; i < bottom[0]->num_axes(); ++i) {
+    if (i > 0) bottom0_shape_ss << ", ";
+    bottom0_shape_ss << bottom[0]->shape(i);
+  }
+
+  CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss Reshape: bottom[0]=[" << bottom0_shape_ss.str()
+                      << "] outer_num_=" << outer_num_
+                      << " inner_num_=" << inner_num_
+                      << " softmax_axis_=" << softmax_axis_;
+
   if (bottom.size() == 2) {
     std::vector<int64_t> loss_shape = {1};
     top[0]->Reshape(loss_shape);
+    CAFFE_FFI_TENSOR_LOG << "SoftmaxWithLoss: created top[0] (loss) shape=[1]";
     if (top.size() == 2) {
       top[1]->ReshapeLike(*bottom[0]);
+      CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss: top[1] (probs) shape matches bottom[0]";
     }
   } else {
     top[0]->ReshapeLike(*bottom[0]);
+    CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss: top[0] (probs) shape matches bottom[0]";
   }
 }
 
@@ -85,6 +121,13 @@ void SoftmaxWithLossLayer::Forward_cpu(const std::vector<Blob*>& bottom,
 
   int channels = static_cast<int>(bottom[0]->shape(softmax_axis_));
   int dim = channels * inner_num_;
+
+  CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss Forward: outer_num_=" << outer_num_
+                      << " inner_num_=" << inner_num_
+                      << " channels=" << channels
+                      << " dim=" << dim
+                      << " has_labels=" << (bottom.size() == 2);
+
   caffe_copy_fp32(static_cast<size_t>(bottom[0]->count()), bottom_data, prob_data);
 
   for (int i = 0; i < outer_num_; ++i) {
@@ -133,11 +176,15 @@ void SoftmaxWithLossLayer::Forward_cpu(const std::vector<Blob*>& bottom,
       }
     }
     top_data[0] = (count > 0) ? loss / count : 0.0f;
+    CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss Forward: count=" << count
+                        << " total_loss=" << loss
+                        << " avg_loss=" << top_data[0];
     if (top.size() == 2) {
       caffe_copy_fp32(static_cast<size_t>(prob_->count()), prob_data, top[1]->cpu_data());
     }
   } else {
     caffe_copy_fp32(static_cast<size_t>(prob_->count()), prob_data, top_data);
+    CAFFE_FFI_LAYER_LOG << "SoftmaxWithLoss Forward: outputting probabilities only";
   }
 }
 

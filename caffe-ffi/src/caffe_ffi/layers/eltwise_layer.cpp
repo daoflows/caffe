@@ -1,9 +1,11 @@
 #include "caffe_ffi/layers/eltwise_layer.hpp"
 
 #include <algorithm>
+#include <sstream>
 #include <vector>
 
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 
 namespace caffe_ffi {
 
@@ -14,6 +16,13 @@ void EltwiseLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   TVM_FFI_ICHECK(op_ == PROD || op_ == SUM || op_ == MAX)
       << "EltwiseLayer only supports PROD, SUM, and MAX operations.";
 
+  const char* op_name = "UNKNOWN";
+  switch (op_) {
+    case PROD: op_name = "PROD"; break;
+    case SUM: op_name = "SUM"; break;
+    case MAX: op_name = "MAX"; break;
+  }
+
   const int num_bottoms = static_cast<int>(bottom.size());
   coeffs_.resize(num_bottoms, 1.0f);
   if (param.coeff_size() > 0) {
@@ -23,6 +32,16 @@ void EltwiseLayer::LayerSetUp(const std::vector<Blob*>& bottom,
       coeffs_[i] = param.coeff(i);
     }
   }
+
+  std::ostringstream coeffs_ss;
+  for (int i = 0; i < num_bottoms; ++i) {
+    if (i > 0) coeffs_ss << ", ";
+    coeffs_ss << coeffs_[i];
+  }
+
+  CAFFE_FFI_LAYER_LOG << "Eltwise LayerSetUp: op=" << op_name
+                      << " num_bottoms=" << num_bottoms
+                      << " coeffs=[" << coeffs_ss.str() << "]";
 }
 
 void EltwiseLayer::Reshape(const std::vector<Blob*>& bottom,
@@ -36,6 +55,29 @@ void EltwiseLayer::Reshape(const std::vector<Blob*>& bottom,
     }
   }
   top[0]->ReshapeLike(*bottom[0]);
+
+  std::ostringstream input_shape_ss;
+  for (int i = 0; i < bottom[0]->num_axes(); ++i) {
+    if (i > 0) input_shape_ss << ", ";
+    input_shape_ss << bottom[0]->shape(i);
+  }
+  std::ostringstream output_shape_ss;
+  for (int i = 0; i < top[0]->num_axes(); ++i) {
+    if (i > 0) output_shape_ss << ", ";
+    output_shape_ss << top[0]->shape(i);
+  }
+
+  const char* op_name = "UNKNOWN";
+  switch (op_) {
+    case PROD: op_name = "PROD"; break;
+    case SUM: op_name = "SUM"; break;
+    case MAX: op_name = "MAX"; break;
+  }
+
+  CAFFE_FFI_LAYER_LOG << "Eltwise Reshape: op=" << op_name
+                      << " num_bottoms=" << bottom.size()
+                      << " input=[" << input_shape_ss.str()
+                      << "] output=[" << output_shape_ss.str() << "]";
 }
 
 void EltwiseLayer::Forward_cpu(const std::vector<Blob*>& bottom,
@@ -43,6 +85,17 @@ void EltwiseLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   const int64_t count = bottom[0]->count();
   float* top_data = top[0]->cpu_data();
   const int num_bottoms = static_cast<int>(bottom.size());
+
+  const char* op_name = "UNKNOWN";
+  switch (op_) {
+    case PROD: op_name = "PROD"; break;
+    case SUM: op_name = "SUM"; break;
+    case MAX: op_name = "MAX"; break;
+  }
+
+  CAFFE_FFI_LAYER_LOG << "Eltwise Forward: op=" << op_name
+                      << " num_bottoms=" << num_bottoms
+                      << " count=" << count;
 
   switch (op_) {
     case PROD: {

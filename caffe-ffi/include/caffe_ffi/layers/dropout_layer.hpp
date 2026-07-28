@@ -14,9 +14,8 @@ class DropoutLayer : public Layer {
   static constexpr bool _type_mutable = true;
 
   explicit DropoutLayer(const caffe::LayerParameter& param) : Layer(param) {}
-  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override {
-    top[0]->ReshapeLike(*bottom[0]);
-  }
+  void LayerSetUp(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
+  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
 
   const char* type() const override { return "Dropout"; }
   int ExactNumBottomBlobs() const override { return 1; }

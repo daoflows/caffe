@@ -139,6 +139,10 @@ Tensor Blob::diff_tensor() const {
 }
 
 void Blob::Reshape(ShapeView shape) {
+  for (size_t i = 0; i < shape.size(); ++i) {
+    TVM_FFI_ICHECK_GE(shape[i], 0)
+        << "Blob#" << id_ << " Reshape: dimension " << i << " is negative (" << shape[i] << ")";
+  }
   bool shape_changed = !data_tensor_.defined() || (shape.size() != static_cast<size_t>(data_tensor_.ndim()));
   if (!shape_changed) {
     for (size_t i = 0; i < shape.size(); ++i) {
@@ -196,9 +200,8 @@ void Blob::Reshape(const std::vector<int64_t>& shape) {
   Reshape(ShapeView(shape.data(), shape.size()));
 }
 
-void Blob::Reshape(const Array<int64_t>& shape) {
-  std::vector<int64_t> dims(shape.begin(), shape.end());
-  Reshape(ShapeView(dims.data(), dims.size()));
+void Blob::Reshape(Shape shape) {
+  Reshape(ShapeView(shape.data(), shape.size()));
 }
 
 void Blob::Reshape(const caffe::BlobShape& shape) {

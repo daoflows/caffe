@@ -14,9 +14,7 @@ class TanHLayer : public Layer {
   static constexpr bool _type_mutable = true;
 
   explicit TanHLayer(const caffe::LayerParameter& param) : Layer(param) {}
-  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override {
-    top[0]->ReshapeLike(*bottom[0]);
-  }
+  void Reshape(const std::vector<Blob*>& bottom, const std::vector<Blob*>& top) override;
 
   const char* type() const override { return "TanH"; }
   int ExactNumBottomBlobs() const override { return 1; }

@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <vector>
 
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 
 namespace caffe_ffi {
 
@@ -16,6 +18,7 @@ void ConcatLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   } else {
     concat_axis_ = bottom[0]->CanonicalAxisIndex(param.concat_dim());
   }
+  CAFFE_FFI_LAYER_LOG << "Concat LayerSetUp: concat_axis=" << concat_axis_;
 }
 
 void ConcatLayer::Reshape(const std::vector<Blob*>& bottom,
@@ -50,6 +53,24 @@ void ConcatLayer::Reshape(const std::vector<Blob*>& bottom,
 
   outer_count_ = bottom[0]->count(0, concat_axis_);
   inner_count_ = bottom[0]->count(concat_axis_ + 1);
+
+  std::ostringstream top_shape_ss;
+  for (int i = 0; i < num_axes; ++i) {
+    if (i > 0) top_shape_ss << ", ";
+    top_shape_ss << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Concat Reshape: num_bottoms=" << num_bottoms
+                      << " concat_axis=" << concat_axis_
+                      << " outer_count=" << outer_count_
+                      << " inner_count=" << inner_count_
+                      << " output shape=[" << top_shape_ss.str() << "]";
+
+  std::ostringstream offsets_ss;
+  for (int i = 0; i <= num_bottoms; ++i) {
+    if (i > 0) offsets_ss << ", ";
+    offsets_ss << concat_offsets_[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Concat: concat_offsets=[" << offsets_ss.str() << "]";
 }
 
 void ConcatLayer::Forward_cpu(const std::vector<Blob*>& bottom,
@@ -57,6 +78,12 @@ void ConcatLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   float* top_data = top[0]->cpu_data();
   const int num_bottoms = static_cast<int>(bottom.size());
   const int64_t total_concat = top[0]->shape(concat_axis_);
+
+  CAFFE_FFI_LAYER_LOG << "Concat Forward: num_bottoms=" << num_bottoms
+                      << " concat_axis=" << concat_axis_
+                      << " outer_count=" << outer_count_
+                      << " inner_count=" << inner_count_
+                      << " total_concat=" << total_concat;
 
   for (int i = 0; i < num_bottoms; ++i) {
     const float* bottom_data = bottom[i]->cpu_data();

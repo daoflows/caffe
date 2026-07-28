@@ -1,9 +1,11 @@
 #include "caffe_ffi/layers/flatten_layer.hpp"
 
+#include <sstream>
 #include <vector>
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 
 namespace caffe_ffi {
 
@@ -25,10 +27,27 @@ void FlattenLayer::Reshape(const std::vector<Blob*>& bottom,
   }
   top[0]->Reshape(top_shape);
   TVM_FFI_ICHECK_EQ(top[0]->count(), bottom[0]->count());
+
+  std::ostringstream bottom_shape_ss;
+  for (int i = 0; i < bottom[0]->num_axes(); ++i) {
+    if (i > 0) bottom_shape_ss << ", ";
+    bottom_shape_ss << bottom[0]->shape(i);
+  }
+  std::ostringstream top_shape_ss;
+  for (int i = 0; i < static_cast<int>(top_shape.size()); ++i) {
+    if (i > 0) top_shape_ss << ", ";
+    top_shape_ss << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "Flatten Reshape: start_axis=" << start_axis
+                      << " end_axis=" << end_axis
+                      << " input=[" << bottom_shape_ss.str() << "]"
+                      << " output=[" << top_shape_ss.str() << "]"
+                      << " flattened_dim=" << flattened_dim;
 }
 
 void FlattenLayer::Forward_cpu(const std::vector<Blob*>& bottom,
                                 const std::vector<Blob*>& top) {
+  CAFFE_FFI_LAYER_LOG << "Flatten Forward: count=" << bottom[0]->count() << " (copy)";
   caffe_copy_fp32(static_cast<size_t>(bottom[0]->count()),
                    bottom[0]->cpu_data(), top[0]->cpu_data());
 }

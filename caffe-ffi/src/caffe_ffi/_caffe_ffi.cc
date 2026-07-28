@@ -53,23 +53,27 @@ ObjectPtr<Blob> NewBlob() {
   return make_object<Blob>();
 }
 
-ObjectPtr<Blob> NewBlobFromShape(const Array<int64_t>& shape) {
-  std::vector<int64_t> sv;
-  for (size_t i = 0; i < shape.size(); ++i) {
-    sv.push_back(shape[i]);
+ObjectPtr<Blob> NewBlobFromShape(Shape shape) {
+  ShapeView sv(shape.data(), shape.size());
+  for (size_t i = 0; i < sv.size(); ++i) {
+    TVM_FFI_ICHECK(sv[i] >= 0)
+        << "Blob shape dimension " << i << " must be non-negative, got " << sv[i];
   }
-  return make_object<Blob>(ShapeView(sv.data(), sv.size()));
+  return make_object<Blob>(sv);
 }
 
-ObjectPtr<Net> NewNetFromProtoString(const std::string& proto_text) {
+ObjectPtr<Net> NewNetFromProtoString(const String& proto_text) {
+  TVM_FFI_ICHECK(!proto_text.empty()) << "NetParameter proto text must not be empty";
   caffe::NetParameter param;
-  bool success = google::protobuf::TextFormat::ParseFromString(proto_text, &param);
+  bool success = google::protobuf::TextFormat::ParseFromString(
+      static_cast<std::string>(proto_text), &param);
   TVM_FFI_ICHECK(success) << "Failed to parse NetParameter from text format";
   return make_object<Net>(param);
 }
 
-ObjectPtr<Net> NewNetFromFile(const std::string& filename) {
-  std::ifstream ifs(filename);
+ObjectPtr<Net> NewNetFromFile(const String& filename) {
+  TVM_FFI_ICHECK(!filename.empty()) << "Net prototxt filename must not be empty";
+  std::ifstream ifs(static_cast<std::string>(filename));
   TVM_FFI_ICHECK(ifs.good()) << "Failed to open net file: " << filename;
   std::stringstream ss;
   ss << ifs.rdbuf();
@@ -107,23 +111,26 @@ int64_t LiveBlobCountGlobal() {
   return LiveBlobCount();
 }
 
-std::string GetBacktraceString(int skip_frames, int max_frames) {
-  return backtrace::GetBacktrace(skip_frames + 1, max_frames);
+String GetBacktraceString(int skip_frames, int max_frames) {
+  return String(backtrace::GetBacktrace(skip_frames + 1, max_frames));
 }
 
 Tensor BlobDataTensor(ObjectPtr<Blob> blob) {
+  TVM_FFI_ICHECK(blob != nullptr) << "Blob must not be null";
   CAFFE_FFI_MEM_LOG << "FFI BlobDataTensor blob=" << blob.get()
                     << " returning data_tensor view";
   return blob->data_tensor();
 }
 
 Tensor BlobDiffTensor(ObjectPtr<Blob> blob) {
+  TVM_FFI_ICHECK(blob != nullptr) << "Blob must not be null";
   CAFFE_FFI_MEM_LOG << "FFI BlobDiffTensor blob=" << blob.get()
                     << " returning diff_tensor view";
   return blob->diff_tensor();
 }
 
 void BlobUpdate(ObjectPtr<Blob> blob) {
+  TVM_FFI_ICHECK(blob != nullptr) << "Blob must not be null";
   CAFFE_FFI_MEM_LOG << "FFI BlobUpdate blob=" << blob.get();
   blob->Update();
 }
@@ -152,7 +159,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("shape_at", static_cast<int64_t (Blob::*)(int) const>(&Blob::shape))
       .def("num_axes", &Blob::num_axes)
       .def("count", static_cast<int64_t (Blob::*)() const>(&Blob::count))
-      .def("Reshape", static_cast<void (Blob::*)(const Array<int64_t>&)>(&Blob::Reshape))
+      .def("Reshape", static_cast<void (Blob::*)(Shape)>(&Blob::Reshape))
       .def("get_data", &Blob::get_data)
       .def("set_data", &Blob::set_data)
       .def("get_diff", &Blob::get_diff)
@@ -163,6 +170,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 
   refl::ObjectDef<Layer>()
       .def("type", &Layer::type)
+      .def("name", &Layer::name)
       .def("blobs_array", &Layer::blobs_array);
 
   refl::ObjectDef<Net>()
@@ -186,5 +194,18 @@ TVM_FFI_STATIC_INIT_BLOCK() {
 }
 
 TVM_FFI_DLL_EXPORT_TYPED_FUNC(Version, Version)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(NewBlob, NewBlob)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(NewBlobFromShape, NewBlobFromShape)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(NewNetFromProtoString, NewNetFromProtoString)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(NewNetFromFile, NewNetFromFile)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(LayerTypeList, LayerTypeList)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(SetLogLevel, SetLogLevel)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(GetLogLevel, GetLogLevel)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(TotalAllocatedBytes, TotalAllocatedBytesGlobal)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(LiveBlobCount, LiveBlobCountGlobal)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(GetBacktrace, GetBacktraceString)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(BlobDataTensor, BlobDataTensor)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(BlobDiffTensor, BlobDiffTensor)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(BlobUpdate, BlobUpdate)
 
 }  // namespace caffe_ffi

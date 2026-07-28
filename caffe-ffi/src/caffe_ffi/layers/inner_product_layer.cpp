@@ -19,7 +19,12 @@ void InnerProductLayer::LayerSetUp(const std::vector<Blob*>& bottom,
   const int axis = bottom[0]->CanonicalAxisIndex(
       this->layer_param_.inner_product_param().axis());
   K_ = static_cast<int>(bottom[0]->count(axis));
+  CAFFE_FFI_LAYER_LOG << "InnerProduct LayerSetUp: num_output=" << N_
+                      << " bias_term=" << bias_term_
+                      << " transpose=" << transpose_
+                      << " axis=" << axis << " K_=" << K_;
   if (this->blobs_.size() > 0) {
+    CAFFE_FFI_LAYER_LOG << "InnerProduct: using pre-loaded weights, blobs_.size=" << this->blobs_.size();
     TVM_FFI_ICHECK_EQ(this->blobs_.size(), bias_term_ ? 2U : 1U)
         << "Incorrect number of weight blobs.";
     if (transpose_) {
@@ -47,9 +52,12 @@ void InnerProductLayer::LayerSetUp(const std::vector<Blob*>& bottom,
       weight_shape[1] = K_;
     }
     this->blobs_[0] = make_object<Blob>(weight_shape);
+    CAFFE_FFI_LAYER_LOG << "InnerProduct: created weight blob shape=["
+                        << weight_shape[0] << ", " << weight_shape[1] << "]";
     if (bias_term_) {
       std::vector<int64_t> bias_shape = {N_};
       this->blobs_[1] = make_object<Blob>(bias_shape);
+      CAFFE_FFI_LAYER_LOG << "InnerProduct: created bias blob shape=[" << N_ << "]";
     }
   }
   this->param_propagate_down_.resize(this->blobs_.size(), true);
@@ -71,11 +79,19 @@ void InnerProductLayer::Reshape(const std::vector<Blob*>& bottom,
   for (int i = axis + 1; i < bottom[0]->num_axes(); ++i) {
     top_shape.push_back(1);
   }
+  CAFFE_FFI_LAYER_LOG << "InnerProduct Reshape: M_=" << M_ << " K_=" << K_
+                      << " N_=" << N_ << " top_shape=[";
+  for (size_t i = 0; i < top_shape.size(); ++i) {
+    if (i > 0) CAFFE_FFI_LAYER_LOG << ", ";
+    CAFFE_FFI_LAYER_LOG << top_shape[i];
+  }
+  CAFFE_FFI_LAYER_LOG << "]";
   top[0]->Reshape(top_shape);
   if (bias_term_) {
     std::vector<int64_t> bias_shape = {M_};
     bias_multiplier_ = make_object<Blob>(bias_shape);
     caffe_set_fp32(static_cast<size_t>(M_), 1.0f, bias_multiplier_->cpu_data());
+    CAFFE_FFI_LAYER_LOG << "InnerProduct: created bias_multiplier_ shape=[" << M_ << "]";
   }
 }
 
@@ -84,10 +100,13 @@ void InnerProductLayer::Forward_cpu(const std::vector<Blob*>& bottom,
   const float* bottom_data = bottom[0]->cpu_data();
   float* top_data = top[0]->cpu_data();
   const float* weight = this->blobs_[0]->cpu_data();
+  CAFFE_FFI_TENSOR_LOG << "InnerProduct Forward_cpu: GEMM C=" << M_ << "x" << N_
+                       << " += A=" << M_ << "x" << K_ << " * B=" << K_ << "x" << N_;
   caffe_cpu_gemm_fp32(false, transpose_ ? false : true,
                        M_, N_, K_, 1.0f,
                        bottom_data, weight, 0.0f, top_data);
   if (bias_term_) {
+    CAFFE_FFI_TENSOR_LOG << "InnerProduct Forward_cpu: adding bias (GEMM C += bias_multiplier * bias)";
     caffe_cpu_gemm_fp32(false, false, M_, N_, 1, 1.0f,
                          bias_multiplier_->cpu_data(),
                          this->blobs_[1]->cpu_data(), 1.0f, top_data);

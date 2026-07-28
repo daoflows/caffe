@@ -193,7 +193,16 @@ Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Array<float>>& input
         ptr[i] = data[i];
       }
     } else {
-      CAFFE_FFI_LOG_WARN() << "Forward: input blob '" << name << "' not found in network, skipping";
+      TVM_FFI_ICHECK(has_blob(name))
+          << "Forward: input blob '" << name << "' not found in network '" << name_ << "'. "
+          << "Available blobs: " << [&]() {
+               std::ostringstream oss;
+               for (size_t i = 0; i < blob_names_.size(); ++i) {
+                 if (i > 0) oss << ", ";
+                 oss << "'" << blob_names_[i] << "'";
+               }
+               return oss.str();
+             }();
     }
   }
   CAFFE_FFI_NET_LOG << "Forward: starting ForwardFromTo(0, " << (layers_.size() - 1) << ")";

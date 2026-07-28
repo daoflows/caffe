@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 #include <vector>
 
 #include <tvm/ffi/memory.h>
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/layer_factory.hpp"
+#include "caffe_ffi/log.hpp"
 
 namespace caffe_ffi {
 
@@ -31,6 +33,22 @@ void SoftmaxLayer::Reshape(const std::vector<Blob*>& bottom,
     }
   }
   scale_ = make_object<Blob>(scale_dims);
+
+  std::ostringstream bottom_shape_ss;
+  for (int i = 0; i < bottom[0]->num_axes(); ++i) {
+    if (i > 0) bottom_shape_ss << ", ";
+    bottom_shape_ss << bottom[0]->shape(i);
+  }
+  std::ostringstream scale_shape_ss;
+  for (int i = 0; i < scale_->num_axes(); ++i) {
+    if (i > 0) scale_shape_ss << ", ";
+    scale_shape_ss << scale_->shape(i);
+  }
+  CAFFE_FFI_LAYER_LOG << "Softmax Reshape: softmax_axis=" << softmax_axis_
+                      << " outer_num=" << outer_num_ << " inner_num=" << inner_num_
+                      << " bottom_shape=[" << bottom_shape_ss.str() << "]"
+                      << " sum_multiplier shape=[" << mult_dims[0] << "]"
+                      << " scale shape=[" << scale_shape_ss.str() << "]";
 }
 
 void SoftmaxLayer::Forward_cpu(const std::vector<Blob*>& bottom,

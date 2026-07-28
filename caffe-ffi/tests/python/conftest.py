@@ -222,7 +222,6 @@ def _build_mlp_python(param):
     from caffe_ffi._core import Net, Blob, Layer
 
     net = Net.__new__(Net)
-    net._is_native = False
     net._py_name = param.name
     net._py_blobs = {}
     net._py_layers = {}
@@ -268,7 +267,6 @@ def _build_mlp_python(param):
 
     def _make_layer(name, type_str, weight_blobs=None):
         layer = Layer()
-        layer._is_native = False
         layer._py_name = name
         layer._py_type_str = type_str
         layer._py_blobs = list(weight_blobs) if weight_blobs else []

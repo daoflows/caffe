@@ -85,9 +85,8 @@ def _merge_weights(param: caffe_pb2.NetParameter, weights: caffe_pb2.NetParamete
 
 
 def _build_net_from_param(net: Net, param: caffe_pb2.NetParameter) -> None:
-    from ._core import Blob, Layer
+    from ._core import Blob, Layer as _LayerCls
 
-    net._is_native = False
     net._py_name = param.name if param.name else ""
     net._py_blobs = {}
     net._py_layers = {}
@@ -112,8 +111,7 @@ def _build_net_from_param(net: Net, param: caffe_pb2.NetParameter) -> None:
         net._py_input_blobs.append(blob)
 
     for layer_param in param.layer:
-        layer = Layer()
-        layer._is_native = False
+        layer = _LayerCls()
         layer._py_name = layer_param.name
         layer._py_type_str = layer_param.type
         layer._py_blobs = []
