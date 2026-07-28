@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
+import traceback
 from typing import List, Optional
 
 import numpy as np
@@ -8,6 +10,8 @@ import numpy as np
 from . import _ffi_api
 
 import tvm_ffi
+
+_reg_logger = logging.getLogger("caffe_ffi.registration")
 
 
 class Blob(tvm_ffi.Object):
@@ -138,12 +142,18 @@ class Net(tvm_ffi.Object):
 
 def _register_types():
     if not _ffi_api.is_available():
+        _reg_logger.debug("FFI not available, skipping type registration (Python-only mode)")
         return
     try:
         _ffi_api.registry.register_object(Blob._type_key, Blob)
         _ffi_api.registry.register_object(Layer._type_key, Layer)
         _ffi_api.registry.register_object(Net._type_key, Net)
-    except Exception:
+    except Exception as e:
+        _reg_logger.warning(
+            "Failed to register native object types: %s. "
+            "Native C++ methods will not be available; falling back to Python-only mode.\n%s",
+            e, traceback.format_exc(),
+        )
         return
     _add_python_wrappers()
 

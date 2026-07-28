@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+_init_logger = logging.getLogger("caffe_ffi.ffi_init")
 
 
 def _find_lib_path() -> Optional[Path]:
@@ -73,12 +76,25 @@ def _try_init_tvm_ffi():
                 except (OSError, AttributeError):
                     pass
             tvm_ffi.load_module(str(_lib_path))
+            _init_logger.debug("Loaded caffe-ffi native library from %s", _lib_path)
+        else:
+            _init_logger.warning(
+                "caffe-ffi native library not found. "
+                "Searched build/Release, build/, build-cmake/, build-wheel/Release, and package directories. "
+                "Falling back to Python-only mode. Build the C++ extension for full functionality."
+            )
         
         _ffi_available = True
         return True
-    except ImportError:
+    except ImportError as e:
+        _init_logger.warning(
+            "Failed to import tvm_ffi: %s. Falling back to Python-only mode.", e
+        )
         return False
-    except Exception:
+    except Exception as e:
+        _init_logger.warning(
+            "Failed to load caffe-ffi native library: %s. Falling back to Python-only mode.", e
+        )
         return False
 
 

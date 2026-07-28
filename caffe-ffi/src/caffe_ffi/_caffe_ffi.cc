@@ -98,6 +98,14 @@ int GetLogLevel() {
   return static_cast<int>(caffe_ffi::log::GetLevel());
 }
 
+int64_t TotalAllocatedBytesGlobal() {
+  return TotalAllocatedBytes();
+}
+
+int64_t LiveBlobCountGlobal() {
+  return LiveBlobCount();
+}
+
 Tensor BlobDataTensor(ObjectPtr<Blob> blob) {
   CAFFE_FFI_MEM_LOG << "FFI BlobDataTensor blob=" << blob.get()
                     << " returning data_tensor view";
@@ -126,6 +134,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("caffe_ffi.LayerTypeList", LayerTypeList)
       .def("caffe_ffi.SetLogLevel", SetLogLevel)
       .def("caffe_ffi.GetLogLevel", GetLogLevel)
+      .def("caffe_ffi.TotalAllocatedBytes", TotalAllocatedBytesGlobal)
+      .def("caffe_ffi.LiveBlobCount", LiveBlobCountGlobal)
       .def("caffe_ffi.BlobDataTensor", BlobDataTensor)
       .def("caffe_ffi.BlobDiffTensor", BlobDiffTensor)
       .def("caffe_ffi.BlobUpdate", BlobUpdate);

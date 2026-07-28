@@ -23,13 +23,23 @@ using LayerVec = std::vector<ObjectPtr<Layer>>;
 
 constexpr int kMaxBlobAxes = 32;
 
+inline const char* DTypeCodeToString(uint8_t code) {
+  switch (code) {
+    case kDLFloat:   return "float";
+    case kDLInt:     return "int";
+    case kDLUInt:    return "uint";
+    default:         return "unknown";
+  }
+}
+
 struct CPUMemAlloc {
   void AllocData(DLTensor* tensor) {
     size_t nbytes = tvm::ffi::GetDataSize(*tensor);
     CAFFE_FFI_MEM_LOG << "AllocData: allocating " << nbytes << " bytes"
                       << " (ndim=" << tensor->ndim
-                      << ", dtype=" << tensor->dtype.code << ":" << tensor->dtype.bits
-                      << ", device_type=" << tensor->device.device_type << ")";
+                      << ", dtype=" << DTypeCodeToString(tensor->dtype.code)
+                      << static_cast<int>(tensor->dtype.bits)
+                      << ", device_type=" << static_cast<int>(tensor->device.device_type) << ")";
     tensor->data = std::malloc(nbytes);
     TVM_FFI_ICHECK(tensor->data != nullptr) << "Failed to allocate CPU memory of size " << nbytes;
     std::memset(tensor->data, 0, nbytes);

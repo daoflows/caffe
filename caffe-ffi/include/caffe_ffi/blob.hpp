@@ -1,6 +1,7 @@
 #ifndef CAFFE_FFI_BLOB_HPP_
 #define CAFFE_FFI_BLOB_HPP_
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,6 +15,10 @@ class BlobShape;
 }
 
 namespace caffe_ffi {
+
+int64_t TotalAllocatedBytes();
+
+int64_t LiveBlobCount();
 
 class Blob : public Object {
  public:
@@ -76,6 +81,7 @@ class Blob : public Object {
       "caffe_ffi.Blob", Blob, Object);
 
  private:
+  int64_t id_;
   std::string name_;
   Tensor data_tensor_;
   Tensor diff_tensor_;

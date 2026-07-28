@@ -11,6 +11,11 @@
 namespace caffe_ffi {
 
 namespace {
+
+std::atomic<int64_t> g_total_allocated_bytes{0};
+std::atomic<int64_t> g_live_blob_count{0};
+std::atomic<int64_t> g_next_blob_id{1};
+
 std::string ShapeToString(ShapeView shape) {
   std::ostringstream oss;
   oss << "(";
@@ -32,56 +37,100 @@ std::string PtrToString(const void* p) {
   oss << p;
   return oss.str();
 }
+
+std::string FormatBytes(int64_t bytes) {
+  std::ostringstream oss;
+  if (bytes < 0) {
+    oss << "-";
+    bytes = -bytes;
+  }
+  if (bytes >= 1024 * 1024) {
+    oss << (bytes / (1024.0 * 1024.0)) << " MB";
+  } else if (bytes >= 1024) {
+    oss << (bytes / 1024.0) << " KB";
+  } else {
+    oss << bytes << " B";
+  }
+  return oss.str();
+}
+
 }  // namespace
 
-Blob::Blob() {
-  CAFFE_FFI_BLOB_LOG << "Blob() default constructor this=" << this;
+Blob::Blob() : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
+  g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (default) this=" << this
+                     << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   Reshape(std::vector<int64_t>{0});
 }
 
-Blob::Blob(ShapeView shape) {
-  CAFFE_FFI_BLOB_LOG << "Blob(ShapeView) this=" << this << " shape=" << ShapeToString(shape);
+Blob::Blob(ShapeView shape) : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
+  g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (ShapeView) this=" << this
+                     << " shape=" << ShapeToString(shape)
+                     << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   Reshape(shape);
 }
 
-Blob::Blob(const std::vector<int64_t>& shape) {
-  CAFFE_FFI_BLOB_LOG << "Blob(vector) this=" << this
-                     << " shape=" << ShapeToString(ShapeView(shape.data(), shape.size()));
+Blob::Blob(const std::vector<int64_t>& shape)
+    : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
+  g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (vector) this=" << this
+                     << " shape=" << ShapeToString(ShapeView(shape.data(), shape.size()))
+                     << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   Reshape(ShapeView(shape.data(), shape.size()));
 }
 
 Blob::~Blob() {
-  CAFFE_FFI_MEM_LOG << "~Blob() this=" << this
-                    << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
-                    << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
+  int64_t data_nbytes = TensorNBytes(data_tensor_);
+  int64_t diff_nbytes = TensorNBytes(diff_tensor_);
+  int64_t total_freed = data_nbytes + diff_nbytes;
+
+  CAFFE_FFI_MEM_LOG << "[MEM-FREE] Blob#" << id_ << " this=" << this
                     << " shape=" << ShapeToString(ShapeView(data_tensor_.shape().data(),
                                                             static_cast<size_t>(data_tensor_.ndim())))
-                    << " data_nbytes=" << TensorNBytes(data_tensor_)
-                    << " diff_nbytes=" << TensorNBytes(diff_tensor_)
-                    << " total_nbytes=" << (TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_));
+                    << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
+                    << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
+                    << " freed=" << total_freed << "B (" << FormatBytes(total_freed) << ")";
+
+  if (total_freed > 0) {
+    int64_t before = g_total_allocated_bytes.fetch_sub(total_freed, std::memory_order_relaxed);
+    int64_t after = before - total_freed;
+    CAFFE_FFI_MEM_LOG << "[MEM-FREE] Blob#" << id_
+                      << " global_delta=-" << total_freed << "B"
+                      << " global_before=" << before << "B (" << FormatBytes(before) << ")"
+                      << " global_after=" << after << "B (" << FormatBytes(after) << ")";
+  }
+
+  int64_t live_before = g_live_blob_count.fetch_sub(1, std::memory_order_relaxed);
+  int64_t live_after = live_before - 1;
+  CAFFE_FFI_MEM_LOG << "[MEM-LIFECYCLE] Blob#" << id_
+                    << " destroyed, live_blobs=" << live_after
+                    << " (was " << live_before << ")";
 }
 
 Tensor Blob::data_tensor() const {
-  CAFFE_FFI_TENSOR_LOG << "data_tensor() this=" << this
+  CAFFE_FFI_TENSOR_LOG << "data_tensor() Blob#" << id_ << " this=" << this
                        << " ptr=" << PtrToString(data_tensor_.data_ptr())
                        << " shape=" << ShapeToString(ShapeView(data_tensor_.shape().data(),
                                                                static_cast<size_t>(data_tensor_.ndim())))
                        << " numel=" << data_tensor_.numel()
                        << " nbytes=" << TensorNBytes(data_tensor_)
-                       << " dtype=" << data_tensor_.dtype()
-                       << " device_type=" << data_tensor_.device().device_type;
+                       << " dtype=" << DTypeCodeToString(data_tensor_.dtype().code)
+                       << static_cast<int>(data_tensor_.dtype().bits)
+                       << " device_type=" << static_cast<int>(data_tensor_.device().device_type);
   return data_tensor_;
 }
 
 Tensor Blob::diff_tensor() const {
-  CAFFE_FFI_TENSOR_LOG << "diff_tensor() this=" << this
+  CAFFE_FFI_TENSOR_LOG << "diff_tensor() Blob#" << id_ << " this=" << this
                        << " ptr=" << PtrToString(diff_tensor_.data_ptr())
                        << " shape=" << ShapeToString(ShapeView(diff_tensor_.shape().data(),
                                                                static_cast<size_t>(diff_tensor_.ndim())))
                        << " numel=" << diff_tensor_.numel()
                        << " nbytes=" << TensorNBytes(diff_tensor_)
-                       << " dtype=" << diff_tensor_.dtype()
-                       << " device_type=" << diff_tensor_.device().device_type;
+                       << " dtype=" << DTypeCodeToString(diff_tensor_.dtype().code)
+                       << static_cast<int>(diff_tensor_.dtype().bits)
+                       << " device_type=" << static_cast<int>(diff_tensor_.device().device_type);
   return diff_tensor_;
 }
 
@@ -105,21 +154,39 @@ void Blob::Reshape(ShapeView shape) {
   int64_t old_nbytes = TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_);
 
   if (shape_changed || !data_tensor_.defined()) {
-    CAFFE_FFI_MEM_LOG << "Reshape: REALLOCATING this=" << this
+    int64_t new_total_nbytes = new_count * sizeof(float) * 2;
+    int64_t net_delta = new_total_nbytes - old_nbytes;
+
+    CAFFE_FFI_MEM_LOG << "[MEM-RESIZE] Blob#" << id_ << " this=" << this
                       << " shape=" << ShapeToString(shape)
                       << " old_count=" << old_count << " new_count=" << new_count
                       << " old_data_ptr=" << PtrToString(old_data_ptr)
                       << " old_diff_ptr=" << PtrToString(old_diff_ptr)
-                      << " old_total_nbytes=" << old_nbytes
-                      << " new_total_nbytes=" << (new_count * sizeof(float) * 2);
+                      << " old_nbytes=" << old_nbytes << "B (" << FormatBytes(old_nbytes) << ")"
+                      << " new_nbytes=" << new_total_nbytes << "B (" << FormatBytes(new_total_nbytes) << ")"
+                      << " net_delta=" << (net_delta >= 0 ? "+" : "") << net_delta << "B";
+
     data_tensor_ = NewCPUTensor(shape);
     diff_tensor_ = NewCPUTensor(shape);
-    CAFFE_FFI_MEM_LOG << "Reshape: allocated new tensors this=" << this
-                      << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
-                      << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
-                      << " total_nbytes=" << (TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_));
+
+    if (old_nbytes > 0) {
+      g_total_allocated_bytes.fetch_sub(old_nbytes, std::memory_order_relaxed);
+    }
+    int64_t before_alloc = g_total_allocated_bytes.load(std::memory_order_relaxed);
+    if (new_total_nbytes > 0) {
+      g_total_allocated_bytes.fetch_add(new_total_nbytes, std::memory_order_relaxed);
+    }
+    int64_t after_alloc = g_total_allocated_bytes.load(std::memory_order_relaxed);
+
+    CAFFE_FFI_MEM_LOG << "[MEM-RESIZE] Blob#" << id_
+                      << " new_data_ptr=" << PtrToString(data_tensor_.data_ptr())
+                      << " new_diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
+                      << " global_delta=" << (net_delta >= 0 ? "+" : "") << net_delta << "B"
+                      << " global_before=" << before_alloc << "B (" << FormatBytes(before_alloc) << ")"
+                      << " global_after=" << after_alloc << "B (" << FormatBytes(after_alloc) << ")"
+                      << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   } else {
-    CAFFE_FFI_TENSOR_LOG << "Reshape: shape unchanged " << ShapeToString(shape)
+    CAFFE_FFI_TENSOR_LOG << "Reshape: Blob#" << id_ << " shape unchanged " << ShapeToString(shape)
                          << " (count=" << new_count << "), skipping reallocation"
                          << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
                          << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr());
@@ -159,7 +226,7 @@ int64_t Blob::LegacyShape(int index) const {
 }
 
 void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
-  CAFFE_FFI_CONTAINER_LOG << "FromProto: reshape=" << reshape
+  CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " reshape=" << reshape
                            << " proto.data_size=" << proto.data_size()
                            << " proto.double_data_size=" << proto.double_data_size()
                            << " proto.diff_size=" << proto.diff_size();
@@ -176,7 +243,7 @@ void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
       if (proto.width() > 0) shape.push_back(proto.width());
       if (shape.empty()) shape.push_back(0);
     }
-    CAFFE_FFI_TENSOR_LOG << "FromProto: reshaping to " << ShapeToString(ShapeView(shape.data(), shape.size()));
+    CAFFE_FFI_TENSOR_LOG << "FromProto: Blob#" << id_ << " reshaping to " << ShapeToString(ShapeView(shape.data(), shape.size()));
     Reshape(shape);
   }
   float* data_ptr = cpu_data();
@@ -185,12 +252,12 @@ void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
   if (data_count > 0) {
     TVM_FFI_ICHECK_EQ(data_count, count())
         << "Incorrect data size for Blob: expected " << count() << ", got " << data_count;
-    CAFFE_FFI_CONTAINER_LOG << "FromProto: copying " << data_count << " float data elements to " << data_ptr;
+    CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " copying " << data_count << " float data elements to " << data_ptr;
     std::copy(proto.data().begin(), proto.data().end(), data_ptr);
   } else if (double_data_count > 0) {
     TVM_FFI_ICHECK_EQ(double_data_count, count())
         << "Incorrect double_data size for Blob: expected " << count() << ", got " << double_data_count;
-    CAFFE_FFI_CONTAINER_LOG << "FromProto: converting " << double_data_count << " double→float data elements";
+    CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " converting " << double_data_count << " double→float data elements";
     for (int i = 0; i < double_data_count; ++i) {
       data_ptr[i] = static_cast<float>(proto.double_data(i));
     }
@@ -201,20 +268,20 @@ void Blob::FromProto(const caffe::BlobProto& proto, bool reshape) {
   if (diff_count > 0) {
     TVM_FFI_ICHECK_EQ(diff_count, count())
         << "Incorrect diff size for Blob: expected " << count() << ", got " << diff_count;
-    CAFFE_FFI_CONTAINER_LOG << "FromProto: copying " << diff_count << " float diff elements to " << diff_ptr;
+    CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " copying " << diff_count << " float diff elements to " << diff_ptr;
     std::copy(proto.diff().begin(), proto.diff().end(), diff_ptr);
   } else if (double_diff_count > 0) {
     TVM_FFI_ICHECK_EQ(double_diff_count, count())
         << "Incorrect double_diff size for Blob: expected " << count() << ", got " << double_diff_count;
-    CAFFE_FFI_CONTAINER_LOG << "FromProto: converting " << double_diff_count << " double→float diff elements";
+    CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " converting " << double_diff_count << " double→float diff elements";
     for (int i = 0; i < double_diff_count; ++i) {
       diff_ptr[i] = static_cast<float>(proto.double_diff(i));
     }
   } else {
-    CAFFE_FFI_CONTAINER_LOG << "FromProto: zeroing diff tensor (" << count() << " elements at " << diff_ptr << ")";
+    CAFFE_FFI_CONTAINER_LOG << "FromProto: Blob#" << id_ << " zeroing diff tensor (" << count() << " elements at " << diff_ptr << ")";
     caffe_set_fp32(static_cast<size_t>(count()), 0.0f, diff_ptr);
   }
-  CAFFE_FFI_BLOB_LOG << "FromProto: completed, data_ptr=" << data_ptr << " diff_ptr=" << diff_ptr;
+  CAFFE_FFI_BLOB_LOG << "FromProto: Blob#" << id_ << " completed, data_ptr=" << data_ptr << " diff_ptr=" << diff_ptr;
 }
 
 void Blob::ToProto(caffe::BlobProto* proto) const {
@@ -237,7 +304,7 @@ void Blob::ToProto(caffe::BlobProto* proto) const {
 }
 
 void Blob::Update() {
-  CAFFE_FFI_TENSOR_LOG << "Update() this=" << this
+  CAFFE_FFI_TENSOR_LOG << "Update() Blob#" << id_ << " this=" << this
                        << " data_ptr=" << PtrToString(cpu_data())
                        << " diff_ptr=" << PtrToString(cpu_diff())
                        << " count=" << count()
@@ -249,19 +316,19 @@ Array<float> Blob::get_data() const {
   Array<float> result;
   result.reserve(count());
   const float* ptr = cpu_data();
-  CAFFE_FFI_CONTAINER_LOG << "get_data: copying " << count() << " elements from " << ptr << " to Array<float>";
+  CAFFE_FFI_CONTAINER_LOG << "get_data: Blob#" << id_ << " copying " << count() << " elements from " << ptr << " to Array<float>";
   for (int64_t i = 0; i < count(); ++i) {
     result.push_back(ptr[i]);
   }
-  CAFFE_FFI_CONTAINER_LOG << "get_data: Array<float> size=" << result.size() << " created";
+  CAFFE_FFI_CONTAINER_LOG << "get_data: Blob#" << id_ << " Array<float> size=" << result.size() << " created";
   return result;
 }
 
 void Blob::set_data(Array<float> data) {
   TVM_FFI_ICHECK_EQ(static_cast<int64_t>(data.size()), count())
-      << "Data size mismatch: expected " << count() << ", got " << data.size();
+      << "Data size mismatch for Blob#" << id_ << ": expected " << count() << ", got " << data.size();
   float* ptr = cpu_data();
-  CAFFE_FFI_CONTAINER_LOG << "set_data: writing " << count() << " elements from Array<float> to " << ptr;
+  CAFFE_FFI_CONTAINER_LOG << "set_data: Blob#" << id_ << " writing " << count() << " elements from Array<float> to " << ptr;
   for (int64_t i = 0; i < count(); ++i) {
     ptr[i] = data[i];
   }
@@ -271,7 +338,7 @@ Array<float> Blob::get_diff() const {
   Array<float> result;
   result.reserve(count());
   const float* ptr = cpu_diff();
-  CAFFE_FFI_CONTAINER_LOG << "get_diff: copying " << count() << " elements from " << ptr << " to Array<float>";
+  CAFFE_FFI_CONTAINER_LOG << "get_diff: Blob#" << id_ << " copying " << count() << " elements from " << ptr << " to Array<float>";
   for (int64_t i = 0; i < count(); ++i) {
     result.push_back(ptr[i]);
   }
@@ -280,12 +347,26 @@ Array<float> Blob::get_diff() const {
 
 void Blob::set_diff(Array<float> diff) {
   TVM_FFI_ICHECK_EQ(static_cast<int64_t>(diff.size()), count())
-      << "Diff size mismatch: expected " << count() << ", got " << diff.size();
+      << "Diff size mismatch for Blob#" << id_ << ": expected " << count() << ", got " << diff.size();
   float* ptr = cpu_diff();
-  CAFFE_FFI_CONTAINER_LOG << "set_diff: writing " << count() << " elements from Array<float> to " << ptr;
+  CAFFE_FFI_CONTAINER_LOG << "set_diff: Blob#" << id_ << " writing " << count() << " elements from Array<float> to " << ptr;
   for (int64_t i = 0; i < count(); ++i) {
     ptr[i] = diff[i];
   }
+}
+
+int64_t TotalAllocatedBytes() {
+  int64_t val = g_total_allocated_bytes.load(std::memory_order_relaxed);
+  CAFFE_FFI_MEM_LOG << "[MEM-QUERY] TotalAllocatedBytes() = " << val << "B (" << FormatBytes(val) << ")"
+                    << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
+  return val;
+}
+
+int64_t LiveBlobCount() {
+  int64_t val = g_live_blob_count.load(std::memory_order_relaxed);
+  CAFFE_FFI_MEM_LOG << "[MEM-QUERY] LiveBlobCount() = " << val
+                    << " total_allocated=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B";
+  return val;
 }
 
 }  // namespace caffe_ffi
