@@ -11,15 +11,6 @@ def layer_type(self) -> str:
     return self.type
 
 
-@property
-def layer_name(self) -> str:
-    """Get layer name."""
-    if hasattr(self, '_handle') and self._handle is not None:
-        if hasattr(self._handle, 'layer_param'):
-            return self._handle.layer_param().name()
-    return getattr(self, '_name', '')
-
-
 def layer_repr(self) -> str:
     name = self.name
     if name:
@@ -29,7 +20,6 @@ def layer_repr(self) -> str:
 
 def _patch_layer():
     """Apply monkey patches to Layer class."""
-    Layer.name = layer_name
     Layer.__repr__ = layer_repr
 
 

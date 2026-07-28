@@ -8,95 +8,34 @@ from . import _core
 from ._core import Blob
 
 
-def _dlpack_to_numpy(tensor) -> np.ndarray:
-    """Convert a DLPack tensor to numpy array (zero-copy if possible)."""
-    try:
-        return np.from_dlpack(tensor)
-    except (AttributeError, TypeError):
-        if hasattr(tensor, 'data_ptr') and hasattr(tensor, 'shape'):
-            data_ptr = tensor.data_ptr()
-            shape = tuple(tensor.shape())
-            import ctypes
-            ptr = ctypes.cast(data_ptr, ctypes.POINTER(ctypes.c_float))
-            arr = np.ctypeslib.as_array(ptr, shape=shape)
-            return arr.copy()
-    return None
-
-
-def _blob_data_property(blob: Blob, is_diff: bool = False) -> np.ndarray:
-    """Get data or diff as numpy array."""
-    if blob._handle is not None:
-        if is_diff:
-            tensor = blob._handle.diff_tensor() if hasattr(blob._handle, 'diff_tensor') else None
-        else:
-            tensor = blob._handle.data_tensor() if hasattr(blob._handle, 'data_tensor') else None
-        
-        if tensor is not None:
-            result = _dlpack_to_numpy(tensor)
-            if result is not None:
-                return result
-        
-        if is_diff:
-            return np.array(blob.get_diff(), dtype=np.float32).reshape(blob.shape)
-        else:
-            return np.array(blob.get_data(), dtype=np.float32).reshape(blob.shape)
-    else:
-        if is_diff:
-            return blob._diff.copy()
-        else:
-            return blob._data.copy()
-
-
-def _blob_set_data_property(blob: Blob, value: np.ndarray, is_diff: bool = False) -> None:
-    """Set data or diff from numpy array."""
-    arr = np.asarray(value, dtype=np.float32)
-    if arr.shape != blob.shape:
-        blob.Reshape(list(arr.shape))
-    
-    if blob._handle is not None:
-        if is_diff:
-            if hasattr(blob._handle, 'diff_tensor'):
-                tensor = blob._handle.diff_tensor()
-                if tensor is not None and hasattr(tensor, 'copyfrom'):
-                    tensor.copyfrom(arr)
-                    return
-            blob.set_diff(arr.flatten().tolist())
-        else:
-            if hasattr(blob._handle, 'data_tensor'):
-                tensor = blob._handle.data_tensor()
-                if tensor is not None and hasattr(tensor, 'copyfrom'):
-                    tensor.copyfrom(arr)
-                    return
-            blob.set_data(arr.flatten().tolist())
-    else:
-        if is_diff:
-            blob._diff = arr.copy()
-        else:
-            blob._data = arr.copy()
-
-
 @property
 def data(self) -> np.ndarray:
-    """Get the data array as numpy (zero-copy via DLPack when available)."""
-    return _blob_data_property(self, is_diff=False)
+    """Get the data array as numpy."""
+    return np.array(self.get_data(), dtype=np.float32).reshape(self.shape)
 
 
 @data.setter
 def data(self, value: np.ndarray) -> None:
     """Set the data array from numpy."""
-    _blob_set_data_property(self, value, is_diff=False)
+    arr = np.asarray(value, dtype=np.float32)
+    if arr.shape != self.shape:
+        self.Reshape(list(arr.shape))
+    self.set_data(arr.flatten().tolist())
 
 
 @property
 def diff(self) -> np.ndarray:
     """Get the diff array as numpy."""
-    return _blob_data_property(self, is_diff=True)
+    return np.array(self.get_diff(), dtype=np.float32).reshape(self.shape)
 
 
 @diff.setter
 def diff(self, value: np.ndarray) -> None:
     """Set the diff array from numpy."""
-    _blob_set_data_property(self, value, is_diff=True)
+    arr = np.asarray(value, dtype=np.float32)
+    if arr.shape != self.shape:
+        self.Reshape(list(arr.shape))
+    self.set_diff(arr.flatten().tolist())
 
 
 def from_numpy(self, arr: np.ndarray, set_diff: bool = False) -> Blob:
@@ -136,25 +75,6 @@ def copy_from(self, other: Blob) -> Blob:
     return self
 
 
-@property
-def blob_name(self) -> str:
-    """Get blob name."""
-    if self._handle is not None:
-        if hasattr(self._handle, 'name'):
-            return self._handle.name()
-    return getattr(self, '_name', '')
-
-
-@blob_name.setter
-def blob_name(self, value: str) -> None:
-    """Set blob name."""
-    if self._handle is not None:
-        if hasattr(self._handle, 'set_name'):
-            self._handle.set_name(value)
-            return
-    self._name = value
-
-
 def blob_repr(self) -> str:
     return f"Blob(shape={self.shape}, dtype=float32)"
 
@@ -168,7 +88,6 @@ def _patch_blob():
     Blob.fill = fill
     Blob.zero = zero
     Blob.copy_from = copy_from
-    Blob.name = blob_name
     Blob.__repr__ = blob_repr
 
 
