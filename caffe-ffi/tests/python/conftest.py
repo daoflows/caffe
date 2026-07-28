@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import sys
 from pathlib import Path
 
@@ -16,6 +17,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "require_cpp_extension: mark test as requiring C++ extension"
     )
+    config.addinivalue_line(
+        "markers", "leak_check: mark test to check for Blob memory leaks (default: autouse)"
+    )
 
 
 from caffe_ffi import _ffi_api
@@ -29,6 +33,56 @@ require_cpp_extension = pytest.mark.skipif(
     not _check_cpp_extension_available(),
     reason="C++ extension not available, skipping test"
 )
+
+
+@pytest.fixture(autouse=True)
+def _check_memory_leaks(request):
+    """Automatic memory leak detection for tests using the C++ extension.
+
+    Records total_allocated_bytes and live_blob_count before each test,
+    forces garbage collection after the test, and asserts that memory
+    returns to baseline. Tests that intentionally hold references across
+    test boundaries (e.g., module-level fixtures) can opt out with
+    @pytest.mark.leak_check(False) or the leak_check fixture.
+    """
+    if not _ffi_api.is_available():
+        yield
+        return
+
+    from caffe_ffi import total_allocated_bytes, live_blob_count
+
+    if "leak_check" in request.keywords and request.keywords["leak_check"] is False:
+        yield
+        return
+
+    gc.collect()
+    mem_before = total_allocated_bytes()
+    blobs_before = live_blob_count()
+
+    yield
+
+    gc.collect()
+    gc.collect()
+    mem_after = total_allocated_bytes()
+    blobs_after = live_blob_count()
+
+    leaked_bytes = mem_after - mem_before
+    leaked_blobs = blobs_after - blobs_before
+
+    if leaked_blobs != 0:
+        pytest.fail(
+            f"Memory leak detected in {request.node.name}: "
+            f"{leaked_blobs} Blob(s) still alive "
+            f"(before={blobs_before}, after={blobs_after}), "
+            f"{leaked_bytes} bytes leaked "
+            f"(before={mem_before}, after={mem_after})"
+        )
+    if leaked_bytes > 0:
+        pytest.fail(
+            f"Memory leak detected in {request.node.name}: "
+            f"{leaked_bytes} bytes still allocated "
+            f"(before={mem_before}, after={mem_after})"
+        )
 
 
 @pytest.fixture
