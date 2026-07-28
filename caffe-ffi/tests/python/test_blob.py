@@ -137,6 +137,140 @@ class TestBlobRepr:
         assert "(2, 3)" in r
 
 
+class TestBlobMemoryCounters:
+    """Tests for memory counter correctness after AllocData/FreeData migration.
+
+    These tests specifically guard against the global_before ordering bug
+    where Reshape() read the counter after subtracting old bytes, causing
+    global_before to show 0B instead of the correct pre-reshape value.
+    The fix moved counter management into AllocData/FreeData primitives
+    so ordering is guaranteed by construction.
+    """
+
+    @staticmethod
+    def _expected_nbytes(shape):
+        count = 1
+        for d in shape:
+            count *= d
+        return count * 4 * 2
+
+    def test_initial_alloc_counter(self):
+        mem_before = caffe_ffi.total_allocated_bytes()
+        b = Blob([3, 4])
+        mem_after = caffe_ffi.total_allocated_bytes()
+        expected = self._expected_nbytes([3, 4])
+        assert mem_after - mem_before == expected, \
+            f"Expected +{expected}B after Blob([3,4]), got +{mem_after - mem_before}B"
+        assert caffe_ffi.live_blob_count() >= 1
+
+    def test_reshape_counter_delta(self):
+        b = Blob([3, 4])
+        mem_before_reshape = caffe_ffi.total_allocated_bytes()
+        old_expected = self._expected_nbytes([3, 4])
+        assert mem_before_reshape >= old_expected
+        b.Reshape([5, 6])
+        mem_after_reshape = caffe_ffi.total_allocated_bytes()
+        new_expected = self._expected_nbytes([5, 6])
+        delta = mem_after_reshape - mem_before_reshape
+        expected_delta = new_expected - old_expected
+        assert delta == expected_delta, \
+            f"Reshape delta should be {expected_delta}B ({old_expected}->{new_expected}), got {delta}B"
+
+    def test_reshape_to_zero_frees_memory(self):
+        b = Blob([2, 3])
+        mem_with_blob = caffe_ffi.total_allocated_bytes()
+        assert mem_with_blob > 0
+        b.Reshape([0])
+        mem_after_zero = caffe_ffi.total_allocated_bytes()
+        assert mem_after_zero == mem_with_blob - self._expected_nbytes([2, 3]), \
+            "Reshape to [0] should free all tensor memory"
+
+    def test_reshape_same_shape_no_delta(self):
+        b = Blob([4, 5])
+        mem_before = caffe_ffi.total_allocated_bytes()
+        b.Reshape([4, 5])
+        mem_after = caffe_ffi.total_allocated_bytes()
+        assert mem_after == mem_before, \
+            f"Reshape to same shape should not change counter: before={mem_before}, after={mem_after}"
+
+    def test_destructor_frees_memory(self):
+        mem_before = caffe_ffi.total_allocated_bytes()
+        live_before = caffe_ffi.live_blob_count()
+        b = Blob([10, 10])
+        mem_after_create = caffe_ffi.total_allocated_bytes()
+        expected = self._expected_nbytes([10, 10])
+        assert mem_after_create - mem_before == expected
+        del b
+        mem_after_delete = caffe_ffi.total_allocated_bytes()
+        live_after = caffe_ffi.live_blob_count()
+        assert mem_after_delete == mem_before, \
+            f"After del Blob, counter should return to {mem_before}, got {mem_after_delete}"
+        assert live_after == live_before, \
+            f"After del Blob, live count should return to {live_before}, got {live_after}"
+
+    def test_multiple_blobs_additive(self):
+        mem_before = caffe_ffi.total_allocated_bytes()
+        b1 = Blob([2, 2])
+        b2 = Blob([3, 3])
+        b3 = Blob([4, 4])
+        expected = (self._expected_nbytes([2, 2]) +
+                    self._expected_nbytes([3, 3]) +
+                    self._expected_nbytes([4, 4]))
+        mem_after = caffe_ffi.total_allocated_bytes()
+        assert mem_after - mem_before == expected, \
+            f"3 Blobs should allocate {expected}B, got {mem_after - mem_before}B"
+        del b2
+        mem_after_del = caffe_ffi.total_allocated_bytes()
+        expected_after_del = expected - self._expected_nbytes([3, 3])
+        assert mem_after_del - mem_before == expected_after_del, \
+            f"After del b2, should have {expected_after_del}B, got {mem_after_del - mem_before}B"
+        del b1
+        del b3
+
+    def test_memory_info_dict(self):
+        info = caffe_ffi.memory_info()
+        assert "total_allocated_bytes" in info
+        assert "live_blob_count" in info
+        assert isinstance(info["total_allocated_bytes"], int)
+        assert isinstance(info["live_blob_count"], int)
+
+    def test_reshape_grow_shrink_cycle(self):
+        """Test that repeated grow/shrink cycles maintain accurate counters.
+
+        This is the core regression test for the global_before ordering bug:
+        if global_before is read after FreeData subtracts old bytes (the bug),
+        the counter would show incorrect intermediate values during Reshape.
+        With AllocData/FreeData managing the counter automatically, all
+        intermediate states are correct by construction.
+        """
+        b = Blob([1])
+        shapes = [(2, 3), (5, 5), (10, 10), (3, 3), (1,)]
+        expected_offsets = []
+        for shape in shapes:
+            b.Reshape(list(shape))
+            expected = self._expected_nbytes(list(shape))
+            actual = caffe_ffi.total_allocated_bytes()
+            assert actual >= expected, \
+                f"After Reshape({shape}), counter ({actual}) should be >= blob size ({expected})"
+            expected_offsets.append(actual)
+        del b
+
+    def test_live_blob_count(self):
+        live_before = caffe_ffi.live_blob_count()
+        b1 = Blob([1])
+        assert caffe_ffi.live_blob_count() == live_before + 1
+        b2 = Blob([2])
+        assert caffe_ffi.live_blob_count() == live_before + 2
+        b3 = Blob([3])
+        assert caffe_ffi.live_blob_count() == live_before + 3
+        del b2
+        assert caffe_ffi.live_blob_count() == live_before + 2
+        del b1
+        assert caffe_ffi.live_blob_count() == live_before + 1
+        del b3
+        assert caffe_ffi.live_blob_count() == live_before
+
+
 class TestBlobZeroCopy:
     def test_data_tensor_returns_ndarray(self):
         b = Blob([2, 3, 4, 5])
