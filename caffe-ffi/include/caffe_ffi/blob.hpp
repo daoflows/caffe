@@ -22,6 +22,7 @@ class Blob : public Object {
   Blob();
   explicit Blob(ShapeView shape);
   explicit Blob(const std::vector<int64_t>& shape);
+  ~Blob();
 
   void Reshape(ShapeView shape);
   void Reshape(const std::vector<int64_t>& shape);
@@ -56,8 +57,8 @@ class Blob : public Object {
   float* cpu_diff() { return static_cast<float*>(diff_tensor_.data_ptr()); }
   const float* cpu_diff() const { return static_cast<const float*>(diff_tensor_.data_ptr()); }
 
-  Tensor data_tensor() const { return data_tensor_; }
-  Tensor diff_tensor() const { return diff_tensor_; }
+  Tensor data_tensor() const;
+  Tensor diff_tensor() const;
 
   void FromProto(const caffe::BlobProto& proto, bool reshape = true);
   void ToProto(caffe::BlobProto* proto) const;

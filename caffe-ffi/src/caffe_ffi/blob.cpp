@@ -21,21 +21,68 @@ std::string ShapeToString(ShapeView shape) {
   oss << ")";
   return oss.str();
 }
+
+int64_t TensorNBytes(const Tensor& t) {
+  if (!t.defined()) return 0;
+  return t.numel() * static_cast<int64_t>(t.dtype().bits / 8);
+}
+
+std::string PtrToString(const void* p) {
+  std::ostringstream oss;
+  oss << p;
+  return oss.str();
+}
 }  // namespace
 
 Blob::Blob() {
-  CAFFE_FFI_BLOB_LOG << "Blob() default constructor";
+  CAFFE_FFI_BLOB_LOG << "Blob() default constructor this=" << this;
   Reshape(std::vector<int64_t>{0});
 }
 
 Blob::Blob(ShapeView shape) {
-  CAFFE_FFI_BLOB_LOG << "Blob(ShapeView) shape=" << ShapeToString(shape);
+  CAFFE_FFI_BLOB_LOG << "Blob(ShapeView) this=" << this << " shape=" << ShapeToString(shape);
   Reshape(shape);
 }
 
 Blob::Blob(const std::vector<int64_t>& shape) {
-  CAFFE_FFI_BLOB_LOG << "Blob(vector) shape=" << ShapeToString(ShapeView(shape.data(), shape.size()));
+  CAFFE_FFI_BLOB_LOG << "Blob(vector) this=" << this
+                     << " shape=" << ShapeToString(ShapeView(shape.data(), shape.size()));
   Reshape(ShapeView(shape.data(), shape.size()));
+}
+
+Blob::~Blob() {
+  CAFFE_FFI_MEM_LOG << "~Blob() this=" << this
+                    << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
+                    << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
+                    << " shape=" << ShapeToString(ShapeView(data_tensor_.shape().data(),
+                                                            static_cast<size_t>(data_tensor_.ndim())))
+                    << " data_nbytes=" << TensorNBytes(data_tensor_)
+                    << " diff_nbytes=" << TensorNBytes(diff_tensor_)
+                    << " total_nbytes=" << (TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_));
+}
+
+Tensor Blob::data_tensor() const {
+  CAFFE_FFI_TENSOR_LOG << "data_tensor() this=" << this
+                       << " ptr=" << PtrToString(data_tensor_.data_ptr())
+                       << " shape=" << ShapeToString(ShapeView(data_tensor_.shape().data(),
+                                                               static_cast<size_t>(data_tensor_.ndim())))
+                       << " numel=" << data_tensor_.numel()
+                       << " nbytes=" << TensorNBytes(data_tensor_)
+                       << " dtype=" << data_tensor_.dtype()
+                       << " device_type=" << data_tensor_.device().device_type;
+  return data_tensor_;
+}
+
+Tensor Blob::diff_tensor() const {
+  CAFFE_FFI_TENSOR_LOG << "diff_tensor() this=" << this
+                       << " ptr=" << PtrToString(diff_tensor_.data_ptr())
+                       << " shape=" << ShapeToString(ShapeView(diff_tensor_.shape().data(),
+                                                               static_cast<size_t>(diff_tensor_.ndim())))
+                       << " numel=" << diff_tensor_.numel()
+                       << " nbytes=" << TensorNBytes(diff_tensor_)
+                       << " dtype=" << diff_tensor_.dtype()
+                       << " device_type=" << diff_tensor_.device().device_type;
+  return diff_tensor_;
 }
 
 void Blob::Reshape(ShapeView shape) {
@@ -53,16 +100,29 @@ void Blob::Reshape(ShapeView shape) {
     new_count *= shape[i];
   }
   int64_t old_count = data_tensor_.defined() ? data_tensor_.numel() : 0;
+  const void* old_data_ptr = data_tensor_.defined() ? data_tensor_.data_ptr() : nullptr;
+  const void* old_diff_ptr = diff_tensor_.defined() ? diff_tensor_.data_ptr() : nullptr;
+  int64_t old_nbytes = TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_);
+
   if (shape_changed || !data_tensor_.defined()) {
-    CAFFE_FFI_TENSOR_LOG << "Reshape: allocating new tensors, shape=" << ShapeToString(shape)
-                         << " (old_count=" << old_count << ", new_count=" << new_count << ")";
+    CAFFE_FFI_MEM_LOG << "Reshape: REALLOCATING this=" << this
+                      << " shape=" << ShapeToString(shape)
+                      << " old_count=" << old_count << " new_count=" << new_count
+                      << " old_data_ptr=" << PtrToString(old_data_ptr)
+                      << " old_diff_ptr=" << PtrToString(old_diff_ptr)
+                      << " old_total_nbytes=" << old_nbytes
+                      << " new_total_nbytes=" << (new_count * sizeof(float) * 2);
     data_tensor_ = NewCPUTensor(shape);
     diff_tensor_ = NewCPUTensor(shape);
-    CAFFE_FFI_TENSOR_LOG << "Reshape: data_tensor=" << data_tensor_.data_ptr()
-                         << ", diff_tensor=" << diff_tensor_.data_ptr();
+    CAFFE_FFI_MEM_LOG << "Reshape: allocated new tensors this=" << this
+                      << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
+                      << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr())
+                      << " total_nbytes=" << (TensorNBytes(data_tensor_) + TensorNBytes(diff_tensor_));
   } else {
     CAFFE_FFI_TENSOR_LOG << "Reshape: shape unchanged " << ShapeToString(shape)
-                         << " (count=" << new_count << "), skipping reallocation";
+                         << " (count=" << new_count << "), skipping reallocation"
+                         << " data_ptr=" << PtrToString(data_tensor_.data_ptr())
+                         << " diff_ptr=" << PtrToString(diff_tensor_.data_ptr());
   }
 }
 
@@ -177,6 +237,11 @@ void Blob::ToProto(caffe::BlobProto* proto) const {
 }
 
 void Blob::Update() {
+  CAFFE_FFI_TENSOR_LOG << "Update() this=" << this
+                       << " data_ptr=" << PtrToString(cpu_data())
+                       << " diff_ptr=" << PtrToString(cpu_diff())
+                       << " count=" << count()
+                       << " operation: data -= diff";
   caffe_cpu_axpby_fp32(static_cast<size_t>(count()), -1.0f, cpu_diff(), 1.0f, cpu_data());
 }
 

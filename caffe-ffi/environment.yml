@@ -16,5 +16,5 @@ dependencies:
   - pip:
       - scikit-build-core>=0.10
       - numpy>=2.3
-      - apache-tvm-ffi
+      - -e ../../tvm-ffi
       - pytest>=8.0

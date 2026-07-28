@@ -159,6 +159,9 @@ def _add_python_wrappers():
     Blob._native_set_diff = getattr(Blob, 'set_diff', None)
     Blob._native_name = getattr(Blob, 'name', None)
     Blob._native_set_name = getattr(Blob, 'set_name', None)
+    Blob._blob_data_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDataTensor")
+    Blob._blob_diff_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDiffTensor")
+    Blob._blob_update_fn = _ffi_api.get_global_func("caffe_ffi.BlobUpdate")
 
     def _blob_shape(self):
         if self._is_native and Blob._native_shape is not None:
@@ -228,20 +231,98 @@ def _add_python_wrappers():
     Blob.set_diff = _blob_set_diff
     Blob.name = property(_blob_get_name, _blob_set_name)
 
+    def _blob_data_tensor(self):
+        if self._is_native and Blob._blob_data_tensor_fn is not None:
+            return np.from_dlpack(Blob._blob_data_tensor_fn(self))
+        return self._py_data
+
+    def _blob_diff_tensor(self):
+        if self._is_native and Blob._blob_diff_tensor_fn is not None:
+            return np.from_dlpack(Blob._blob_diff_tensor_fn(self))
+        return self._py_diff
+
+    def _blob_update(self):
+        if self._is_native and Blob._blob_update_fn is not None:
+            Blob._blob_update_fn(self)
+        elif self._py_data is not None and self._py_diff is not None:
+            self._py_data -= self._py_diff
+
+    def _blob_zero(self):
+        if self._is_native and Blob._native_set_data is not None:
+            shape = self.shape
+            zeros = [0.0] * int(np.prod(shape)) if shape else []
+            Blob._native_set_data(self, zeros)
+        elif self._py_data is not None:
+            self._py_data.fill(0)
+            if self._py_diff is not None:
+                self._py_diff.fill(0)
+
+    def _blob_fill(self, value):
+        if self._is_native and Blob._native_set_data is not None:
+            shape = self.shape
+            data = [float(value)] * int(np.prod(shape)) if shape else []
+            Blob._native_set_data(self, data)
+        elif self._py_data is not None:
+            self._py_data.fill(float(value))
+            if self._py_diff is not None:
+                self._py_diff.fill(0)
+
+    def _blob_copy_from(self, other):
+        if isinstance(other, Blob):
+            other_data = other.data_tensor if other._is_native or other._py_data is not None else other.data
+        else:
+            other_data = np.asarray(other, dtype=np.float32)
+        if self._is_native and Blob._native_set_data is not None:
+            Blob._native_set_data(self, other_data.flatten().tolist())
+        elif self._py_data is not None:
+            self._py_data[:] = other_data.reshape(self._py_shape)
+
+    def _blob_from_numpy(self, arr):
+        arr = np.asarray(arr, dtype=np.float32)
+        if self._is_native:
+            if tuple(arr.shape) != self.shape:
+                self.Reshape(list(arr.shape))
+            Blob._native_set_data(self, arr.flatten().tolist())
+        else:
+            self._py_shape = list(arr.shape)
+            self._py_data = arr.copy()
+            self._py_diff = np.zeros_like(arr)
+
+    def _blob_to_numpy(self):
+        return self.data_tensor.copy()
+
     def _blob_data_property(self):
+        if self._is_native and Blob._blob_data_tensor_fn is not None:
+            return np.from_dlpack(Blob._blob_data_tensor_fn(self)).copy()
+        return self._blob_get_data_np()
+
+    def _blob_diff_property(self):
+        if self._is_native and Blob._blob_diff_tensor_fn is not None:
+            return np.from_dlpack(Blob._blob_diff_tensor_fn(self)).copy()
+        return self._blob_get_diff_np()
+
+    def _blob_get_data_np(self):
         data_list = self.get_data()
         if not data_list:
             return np.zeros(self.shape, dtype=np.float32)
         return np.array(data_list, dtype=np.float32).reshape(self.shape)
 
-    def _blob_diff_property(self):
+    def _blob_get_diff_np(self):
         diff_list = self.get_diff()
         if not diff_list:
             return np.zeros(self.shape, dtype=np.float32)
         return np.array(diff_list, dtype=np.float32).reshape(self.shape)
 
+    Blob.data_tensor = property(_blob_data_tensor)
+    Blob.diff_tensor = property(_blob_diff_tensor)
     Blob.data = property(_blob_data_property)
     Blob.diff = property(_blob_diff_property)
+    Blob.Update = _blob_update
+    Blob.zero = _blob_zero
+    Blob.fill = _blob_fill
+    Blob.copy_from = _blob_copy_from
+    Blob.from_numpy = _blob_from_numpy
+    Blob.to_numpy = _blob_to_numpy
 
     Layer._native_type = getattr(Layer, 'type', None)
     Layer._native_blobs_array = getattr(Layer, 'blobs_array', None)

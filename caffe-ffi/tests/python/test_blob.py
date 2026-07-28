@@ -135,3 +135,59 @@ class TestBlobRepr:
         r = repr(b)
         assert "Blob" in r
         assert "(2, 3)" in r
+
+
+class TestBlobZeroCopy:
+    def test_data_tensor_returns_ndarray(self):
+        b = Blob([2, 3, 4, 5])
+        dt = b.data_tensor
+        assert isinstance(dt, np.ndarray)
+        assert dt.shape == (2, 3, 4, 5)
+        assert dt.dtype == np.float32
+
+    def test_data_tensor_zero_copy_write(self):
+        b = Blob([2, 3, 4, 5])
+        b.data_tensor[0, 0, 0, 0] = 42.0
+        assert abs(b.data_tensor[0, 0, 0, 0] - 42.0) < 0.01
+
+    def test_data_property_returns_copy(self):
+        b = Blob([2, 3])
+        b.data_tensor[0, 0] = 1.0
+        d = b.data
+        assert abs(d[0, 0] - 1.0) < 0.01
+        d[0, 0] = 99.0
+        assert abs(b.data_tensor[0, 0] - 1.0) < 0.01
+
+    def test_diff_tensor_returns_ndarray(self):
+        b = Blob([2, 3])
+        dt = b.diff_tensor
+        assert isinstance(dt, np.ndarray)
+        assert dt.shape == (2, 3)
+        assert dt.dtype == np.float32
+
+    def test_diff_tensor_zero_copy_write(self):
+        b = Blob([3])
+        b.diff_tensor[0] = 7.77
+        assert abs(b.diff_tensor[0] - 7.77) < 0.01
+
+    def test_diff_property_returns_copy(self):
+        b = Blob([3])
+        b.diff_tensor[0] = 2.0
+        d = b.diff
+        assert abs(d[0] - 2.0) < 0.01
+        d[0] = 99.0
+        assert abs(b.diff_tensor[0] - 2.0) < 0.01
+
+    def test_update_subtracts_diff_from_data(self):
+        b = Blob([3])
+        b.data_tensor[:] = [10.0, 20.0, 30.0]
+        b.diff_tensor[:] = [1.0, 2.0, 3.0]
+        b.Update()
+        np.testing.assert_allclose(b.data_tensor, [9.0, 18.0, 27.0], rtol=1e-5)
+
+    def test_data_tensor_persists_across_calls(self):
+        b = Blob([2, 2])
+        t1 = b.data_tensor
+        t1[0, 0] = 5.0
+        t2 = b.data_tensor
+        assert abs(t2[0, 0] - 5.0) < 0.01

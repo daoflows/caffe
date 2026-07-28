@@ -1,5 +1,5 @@
 build-*/
-build/
+build*/
 venv/
 __pycache__/
 *.pyc
@@ -15,3 +15,4 @@ python/caffe/
 *_pb2.py
 *_pb2.pyi
 _test_*.py
+*.whl

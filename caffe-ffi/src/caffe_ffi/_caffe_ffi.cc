@@ -98,6 +98,23 @@ int GetLogLevel() {
   return static_cast<int>(caffe_ffi::log::GetLevel());
 }
 
+Tensor BlobDataTensor(ObjectPtr<Blob> blob) {
+  CAFFE_FFI_MEM_LOG << "FFI BlobDataTensor blob=" << blob.get()
+                    << " returning data_tensor view";
+  return blob->data_tensor();
+}
+
+Tensor BlobDiffTensor(ObjectPtr<Blob> blob) {
+  CAFFE_FFI_MEM_LOG << "FFI BlobDiffTensor blob=" << blob.get()
+                    << " returning diff_tensor view";
+  return blob->diff_tensor();
+}
+
+void BlobUpdate(ObjectPtr<Blob> blob) {
+  CAFFE_FFI_MEM_LOG << "FFI BlobUpdate blob=" << blob.get();
+  blob->Update();
+}
+
 TVM_FFI_STATIC_INIT_BLOCK() {
   namespace refl = tvm::ffi::reflection;
   refl::GlobalDef()
@@ -108,7 +125,10 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("caffe_ffi.NewNetFromFile", NewNetFromFile)
       .def("caffe_ffi.LayerTypeList", LayerTypeList)
       .def("caffe_ffi.SetLogLevel", SetLogLevel)
-      .def("caffe_ffi.GetLogLevel", GetLogLevel);
+      .def("caffe_ffi.GetLogLevel", GetLogLevel)
+      .def("caffe_ffi.BlobDataTensor", BlobDataTensor)
+      .def("caffe_ffi.BlobDiffTensor", BlobDiffTensor)
+      .def("caffe_ffi.BlobUpdate", BlobUpdate);
 
   refl::ObjectDef<Blob>()
       .def(refl::init<>())

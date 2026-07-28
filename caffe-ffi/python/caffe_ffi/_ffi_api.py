@@ -29,16 +29,17 @@ def _find_lib_path() -> Optional[Path]:
         ]
     
     search_dirs = [
-        base_dir,
-        base_dir / "build",
-        base_dir / "build-cmake",
-        base_dir / "build-wheel",
         base_dir / "build" / "Release",
-        base_dir / "build-cmake" / "Release",
-        base_dir / "build-wheel" / "Release",
         base_dir / "build" / "lib",
+        base_dir / "build",
+        base_dir / "build-cmake" / "Release",
         base_dir / "build-cmake" / "lib",
+        base_dir / "build-cmake",
+        base_dir / "build-wheel" / "Release",
+        base_dir / "build-wheel" / "lib",
+        base_dir / "build-wheel",
         Path(__file__).parent,
+        base_dir,
     ]
     
     for search_dir in search_dirs:
@@ -59,6 +60,9 @@ def _try_init_tvm_ffi():
     global _ffi_available
     
     try:
+        if sys.platform == "win32":
+            _setup_windows_dll_paths()
+        
         import tvm_ffi
         
         if _lib_path is not None:
@@ -76,6 +80,30 @@ def _try_init_tvm_ffi():
         return False
     except Exception:
         return False
+
+
+def _setup_windows_dll_paths():
+    """Setup Windows DLL search paths to use current conda env DLLs, not base env."""
+    prefix = Path(sys.prefix)
+    
+    dll_dirs = [
+        prefix / "Library" / "bin",
+        prefix / "DLLs",
+        prefix / "bin",
+    ]
+    
+    path_entries = []
+    for d in dll_dirs:
+        if d.exists():
+            try:
+                os.add_dll_directory(str(d))
+            except (OSError, AttributeError):
+                pass
+            path_entries.append(str(d))
+    
+    if path_entries:
+        new_path = os.pathsep.join(path_entries) + os.pathsep + os.environ.get("PATH", "")
+        os.environ["PATH"] = new_path
 
 
 _try_init_tvm_ffi()
