@@ -1,0 +1,16 @@
+build-*/
+build/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+stdout.txt
+stderr.txt
+build_log.txt
+.vs/
+*.egg-info/
+dist/
+python/caffe/
+*_pb2.py
+*_pb2.pyi

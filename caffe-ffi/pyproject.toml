@@ -1,0 +1,65 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "ninja>=1.11", "cmake>=3.26"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "caffe-ffi"
+version = "0.1.0"
+description = "Caffe FFI bindings using tvm-ffi native object system"
+readme = { text = "Caffe-FFI: Caffe deep learning framework with tvm-ffi native bindings", content-type = "text/plain" }
+license = { text = "BSD-2-Clause" }
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+keywords = ["deep learning", "caffe", "tvm-ffi", "ffi", "neural network"]
+requires-python = ">=3.14"
+
+dependencies = [
+    "numpy>=2.3",
+    "protobuf>=7.0.0",
+    "apache-tvm-ffi",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+wheel.py-api = "py3"
+wheel.packages = ["python/caffe_ffi"]
+wheel.install-dir = "caffe_ffi"
+build-dir = "build-wheel"
+cmake.version = "CMakeLists.txt"
+cmake.build-type = "Release"
+ninja.make-fallback = false
+build.verbose = true
+
+[tool.scikit-build.cmake.define]
+CMAKE_EXPORT_COMPILE_COMMANDS = "ON"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+addopts = ["-v"]
+
+[tool.ruff]
+include = ["python/**/*.py", "tests/**/*.py"]
+line-length = 120
+indent-width = 4
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
