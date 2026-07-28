@@ -216,10 +216,111 @@ def _run_caffe(data, proto_file, blob_file):
         raise
 
 
+def _validate_reshape_params(data, reshape_param):
+    """
+    Pre-validate Reshape parameters in Python before calling C++ layer.
+    Converts C++ CHECK failures (SIGABRT) into Python ValueError with clear messages.
+    
+    Corresponds to reshape_layer.cpp CHECK_EQ(top[0]->count(), bottom[0]->count()).
+    
+    Caffe Reshape logic:
+    - Output shape = input[:axis] + resolved_dims + input[axis+num_axes:]
+    - 0 in dim[i] = copy input axis size from position axis+i (requires i < num_axes)
+    - -1 in dim[i] = infer this dimension (exactly one -1 allowed)
+    - dim can have different length than num_axes (this is how rank changes in reshape)
+    - Product of resolved dims must equal product of affected input axes
+    """
+    import numpy as _np
+    if isinstance(data, (list, tuple)):
+        input_shape = list(data[0].shape)
+    else:
+        input_shape = list(data.shape)
+    
+    shape_spec = reshape_param.get("shape", {})
+    dim = list(shape_spec.get("dim", []))
+    axis = reshape_param.get("axis", 0)
+    num_axes = reshape_param.get("num_axes", -1)
+    
+    if not dim:
+        return
+    
+    ndim = len(input_shape)
+    if axis < 0:
+        axis = ndim + axis
+    if axis < 0 or axis >= ndim:
+        raise ValueError(
+            f"Reshape parameter error: axis={axis} out of range for input_shape={input_shape}"
+        )
+    
+    if num_axes < 0:
+        num_axes = ndim - axis
+    if axis + num_axes > ndim:
+        raise ValueError(
+            f"Reshape parameter error: axis+num_axes={axis+num_axes} exceeds ndim={ndim}"
+        )
+    
+    # Affected input axes (those being reshaped)
+    affected_axes = input_shape[axis:axis + num_axes]
+    affected_count = int(_np.prod(affected_axes)) if affected_axes else 1
+    
+    # Count -1 occurrences
+    num_minus_one = dim.count(-1)
+    if num_minus_one > 1:
+        raise ValueError(
+            f"Reshape parameter error: multiple -1 in dim={dim} (at most one allowed)"
+        )
+    
+    # Compute product of resolved dims:
+    # - d > 0: multiply by d
+    # - d == 0: multiply by affected_axes[i] (copy from input); requires i < num_axes
+    # - d == -1: skip (infer later)
+    constant_count = 1
+    for i, d in enumerate(dim):
+        if d == -1:
+            continue
+        elif d == 0:
+            if i >= num_axes:
+                raise ValueError(
+                    f"Reshape parameter error: dim[0] at position {i} is outside "
+                    f"the affected axis range (num_axes={num_axes}). "
+                    f"dim={dim}, axis={axis}, num_axes={num_axes}"
+                )
+            constant_count *= affected_axes[i]
+        elif d > 0:
+            constant_count *= d
+        else:
+            raise ValueError(
+                f"Reshape parameter error: invalid dim value {d} at position {i} in {dim}"
+            )
+    
+    if num_minus_one == 1:
+        if affected_count % constant_count != 0:
+            raise ValueError(
+                f"Reshape parameter error: cannot infer -1 dimension. "
+                f"Affected axes {affected_axes} have {affected_count} elements, "
+                f"explicit product is {constant_count} (not a divisor). "
+                f"dim={dim}, axis={axis}, num_axes={num_axes}, input_shape={input_shape}. "
+                f"This would trigger SIGABRT in C++ reshape_layer CHECK_EQ."
+            )
+    else:
+        if constant_count != affected_count:
+            raise ValueError(
+                f"Reshape parameter error: element count mismatch. "
+                f"Affected axes {affected_axes} have {affected_count} elements, "
+                f"but resolved dim product is {constant_count}. "
+                f"dim={dim}, axis={axis}, num_axes={num_axes}, input_shape={input_shape}. "
+                f"This would trigger SIGABRT in C++ reshape_layer CHECK_EQ."
+            )
+
 def _test_op(data, func_op, op_name, test_dir, **kwargs):
     """Single op testing pipeline (Caffe-only, no TVM comparison)."""
     logger.info(f"Testing operator: {op_name}")
     logger.debug(f"Test parameters - test_dir: {test_dir}, kwargs: {kwargs}")
+
+    # --- Reshape parameter pre-validation (prevents SIGABRT from C++ CHECK failure) ---
+    if op_name == "Reshape" and "reshape_param" in kwargs:
+        _validate_reshape_params(data, kwargs["reshape_param"])
+
     try:
         shape_list = []
         if isinstance(data, (list, tuple)):

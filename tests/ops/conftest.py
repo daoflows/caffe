@@ -30,3 +30,20 @@ def caffe_test_dir(tmp_path_factory):
     os.makedirs(test_dir, exist_ok=True)
     logger.info(f"Created caffe test directory: {test_dir}")
     return str(test_dir)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Warn about test functions without any pytest marker (prevents silent omission)."""
+    registered_markers = set()
+    if config.getini("markers"):
+        for line in config.getini("markers"):
+            marker_name = line.split(":")[0].strip()
+            registered_markers.add(marker_name)
+
+    for item in items:
+        if not hasattr(item, "own_markers") or not item.own_markers:
+            logger.warning(
+                f"Test function '{item.name}' in {item.fspath.basename} "
+                f"has no pytest markers — it will be skipped by -m correctness/edge/slow filters. "
+                f"Add @pytest.mark.correctness or appropriate marker."
+            )

@@ -30,6 +30,8 @@ def _test_reshape(data, test_dir, **kwargs):
     return _test_op(data, L.Reshape, "Reshape", test_dir, **kwargs)
 
 
+@pytest.mark.correctness
+@pytest.mark.edge
 def test_forward_Reshape(caffe_test_dir):
     """Reshape"""
     logger.info("Running test_forward_Reshape")
@@ -44,7 +46,7 @@ def test_forward_Reshape(caffe_test_dir):
     _test_reshape(data, caffe_test_dir, reshape_param={"shape": {"dim": [0, -1]}})
 
     logger.debug(f"Testing Reshape with axis=2, shape: {data.shape}")
-    _test_reshape(data, caffe_test_dir, reshape_param={"shape": {"dim": [2, 4]}, "axis": 2})
+    _test_reshape(data, caffe_test_dir, reshape_param={"shape": {"dim": [2, 3]}, "axis": 2})
     logger.debug(f"Testing Reshape with axis=1, shape: {data.shape}")
     _test_reshape(data, caffe_test_dir, reshape_param={"shape": {"dim": [4, 3, 4]}, "axis": 1})
     logger.debug(f"Testing Reshape with axis=-3, shape: {data.shape}")
