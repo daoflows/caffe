@@ -39,7 +39,7 @@ Blob::Blob(const std::vector<int64_t>& shape) {
 }
 
 void Blob::Reshape(ShapeView shape) {
-  bool shape_changed = (shape.size() != data_tensor_.ndim());
+  bool shape_changed = !data_tensor_.defined() || (shape.size() != static_cast<size_t>(data_tensor_.ndim()));
   if (!shape_changed) {
     for (size_t i = 0; i < shape.size(); ++i) {
       if (shape[i] != data_tensor_.size(static_cast<int>(i))) {
