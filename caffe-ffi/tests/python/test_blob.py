@@ -5,6 +5,7 @@ import pytest
 
 import caffe_ffi
 from caffe_ffi import Blob
+from .conftest import require_cpp_extension
 
 
 class TestBlobReshape:
@@ -137,6 +138,7 @@ class TestBlobRepr:
         assert "(2, 3)" in r
 
 
+@require_cpp_extension
 class TestBlobMemoryCounters:
     """Tests for memory counter correctness after AllocData/FreeData migration.
 
