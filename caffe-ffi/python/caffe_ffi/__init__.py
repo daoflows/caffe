@@ -104,6 +104,27 @@ def memory_info() -> dict:
     }
 
 
+def get_backtrace(skip_frames: int = 0, max_frames: int = 32) -> str:
+    """Get a C++ stack backtrace string for debugging.
+
+    Captures the current call stack from C++ perspective, with symbol
+    resolution and source line info on supported platforms (Windows/MSVC, Linux).
+
+    Args:
+        skip_frames: Number of top frames to skip (default: 0).
+        max_frames: Maximum number of frames to capture (default: 32).
+
+    Returns:
+        Formatted backtrace string, or a message if backtrace is unavailable
+        (build without CAFFE_FFI_ENABLE_BACKTRACE).
+    """
+    if _ffi_api.is_available():
+        fn = _ffi_api.get_global_func("caffe_ffi.GetBacktrace")
+        if fn is not None:
+            return str(fn(skip_frames, max_frames))
+    return "(backtrace not available: C++ extension missing or build without CAFFE_FFI_ENABLE_BACKTRACE)"
+
+
 def enable_debug_logging(level: int = LOG_LEVEL_DEBUG) -> None:
     """Enable debug logging for both Python and C++ layers.
 
@@ -153,6 +174,7 @@ __all__ = [
     "total_allocated_bytes",
     "live_blob_count",
     "memory_info",
+    "get_backtrace",
     "enable_debug_logging",
     "disable_debug_logging",
     "LOG_LEVEL_TRACE",

@@ -13,6 +13,7 @@
 #include "caffe_ffi/net.hpp"
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/backtrace.hpp"
 
 #include "caffe_ffi/layers/input_layer.hpp"
 #include "caffe_ffi/layers/relu_layer.hpp"
@@ -106,6 +107,10 @@ int64_t LiveBlobCountGlobal() {
   return LiveBlobCount();
 }
 
+std::string GetBacktraceString(int skip_frames, int max_frames) {
+  return backtrace::GetBacktrace(skip_frames + 1, max_frames);
+}
+
 Tensor BlobDataTensor(ObjectPtr<Blob> blob) {
   CAFFE_FFI_MEM_LOG << "FFI BlobDataTensor blob=" << blob.get()
                     << " returning data_tensor view";
@@ -136,6 +141,7 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("caffe_ffi.GetLogLevel", GetLogLevel)
       .def("caffe_ffi.TotalAllocatedBytes", TotalAllocatedBytesGlobal)
       .def("caffe_ffi.LiveBlobCount", LiveBlobCountGlobal)
+      .def("caffe_ffi.GetBacktrace", GetBacktraceString)
       .def("caffe_ffi.BlobDataTensor", BlobDataTensor)
       .def("caffe_ffi.BlobDiffTensor", BlobDiffTensor)
       .def("caffe_ffi.BlobUpdate", BlobUpdate);
@@ -152,7 +158,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("get_diff", &Blob::get_diff)
       .def("set_diff", &Blob::set_diff)
       .def("name", &Blob::name)
-      .def("set_name", &Blob::set_name);
+      .def("set_name", &Blob::set_name)
+      .def("construction_backtrace", &Blob::construction_backtrace);
 
   refl::ObjectDef<Layer>()
       .def("type", &Layer::type)

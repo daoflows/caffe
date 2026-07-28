@@ -6,6 +6,7 @@
 
 #include "caffe_ffi/fill.hpp"
 #include "caffe_ffi/log.hpp"
+#include "caffe_ffi/backtrace.hpp"
 #include "caffe/proto/caffe.pb.h"
 
 namespace caffe_ffi {
@@ -59,6 +60,7 @@ std::string FormatBytes(int64_t bytes) {
 
 Blob::Blob() : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
   g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  construct_bt_ = backtrace::GetBacktrace(3);
   CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (default) this=" << this
                      << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
   Reshape(std::vector<int64_t>{0});
@@ -66,6 +68,7 @@ Blob::Blob() : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
 
 Blob::Blob(ShapeView shape) : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
   g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  construct_bt_ = backtrace::GetBacktrace(3);
   CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (ShapeView) this=" << this
                      << " shape=" << ShapeToString(shape)
                      << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
@@ -75,6 +78,7 @@ Blob::Blob(ShapeView shape) : id_(g_next_blob_id.fetch_add(1, std::memory_order_
 Blob::Blob(const std::vector<int64_t>& shape)
     : id_(g_next_blob_id.fetch_add(1, std::memory_order_relaxed)) {
   g_live_blob_count.fetch_add(1, std::memory_order_relaxed);
+  construct_bt_ = backtrace::GetBacktrace(3);
   CAFFE_FFI_BLOB_LOG << "[MEM-LIFECYCLE] Blob#" << id_ << " constructed (vector) this=" << this
                      << " shape=" << ShapeToString(ShapeView(shape.data(), shape.size()))
                      << " live_blobs=" << g_live_blob_count.load(std::memory_order_relaxed);
@@ -99,6 +103,9 @@ Blob::~Blob() {
 
   data_tensor_ = Tensor();
   diff_tensor_ = Tensor();
+
+  CAFFE_FFI_LOG_TRACE() << "[MEM-LIFECYCLE] Blob#" << id_
+                        << " construction backtrace:\n" << construct_bt_;
 
   CAFFE_FFI_MEM_LOG << "[MEM-LIFECYCLE] Blob#" << id_
                     << " destroyed, global_total=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B"

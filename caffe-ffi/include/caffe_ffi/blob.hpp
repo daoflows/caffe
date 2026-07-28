@@ -8,6 +8,7 @@
 
 #include "caffe_ffi/common.hpp"
 #include "caffe_ffi/math_utils.hpp"
+#include "caffe_ffi/backtrace.hpp"
 
 namespace caffe {
 class BlobProto;
@@ -77,12 +78,15 @@ class Blob : public Object {
   void set_name(const std::string& name) { name_ = name; }
   std::string name() const { return name_; }
 
+  std::string construction_backtrace() const { return construct_bt_; }
+
   TVM_FFI_DECLARE_OBJECT_INFO_FINAL(
       "caffe_ffi.Blob", Blob, Object);
 
  private:
   int64_t id_;
   std::string name_;
+  std::string construct_bt_;
   Tensor data_tensor_;
   Tensor diff_tensor_;
 };

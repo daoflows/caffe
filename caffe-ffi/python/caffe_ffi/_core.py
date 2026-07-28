@@ -169,6 +169,7 @@ def _add_python_wrappers():
     Blob._native_set_diff = getattr(Blob, 'set_diff', None)
     Blob._native_name = getattr(Blob, 'name', None)
     Blob._native_set_name = getattr(Blob, 'set_name', None)
+    Blob._native_construction_backtrace = getattr(Blob, 'construction_backtrace', None)
     Blob._blob_data_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDataTensor")
     Blob._blob_diff_tensor_fn = _ffi_api.get_global_func("caffe_ffi.BlobDiffTensor")
     Blob._blob_update_fn = _ffi_api.get_global_func("caffe_ffi.BlobUpdate")
@@ -240,6 +241,13 @@ def _add_python_wrappers():
     Blob.get_diff = _blob_get_diff
     Blob.set_diff = _blob_set_diff
     Blob.name = property(_blob_get_name, _blob_set_name)
+
+    def _blob_construction_backtrace(self):
+        if self._is_native and Blob._native_construction_backtrace is not None:
+            return Blob._native_construction_backtrace(self)
+        return "(backtrace not available: Python-only mode)"
+
+    Blob.construction_backtrace = property(_blob_construction_backtrace)
 
     def _blob_data_tensor(self):
         if self._is_native and Blob._blob_data_tensor_fn is not None:

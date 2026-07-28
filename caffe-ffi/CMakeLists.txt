@@ -8,6 +8,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(CAFFE_CPU_ONLY "Build Caffe-FFI with CPU only support" ON)
 option(CAFFE_FFI_ENABLE_DEBUG_LOG "Enable detailed debug logging for memory/container operations" ON)
+option(CAFFE_FFI_ENABLE_BACKTRACE "Enable stack backtrace support for memory leak diagnosis" ON)
 
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
@@ -122,6 +123,9 @@ target_compile_definitions(_caffe_ffi PUBLIC
 )
 if(CAFFE_FFI_ENABLE_DEBUG_LOG)
   target_compile_definitions(_caffe_ffi PUBLIC CAFFE_FFI_ENABLE_DEBUG_LOG)
+endif()
+if(CAFFE_FFI_ENABLE_BACKTRACE)
+  target_compile_definitions(_caffe_ffi PUBLIC CAFFE_FFI_ENABLE_BACKTRACE)
 endif()
 if(BLAS_FOUND OR BLAS_LIBRARIES)
   target_compile_definitions(_caffe_ffi PUBLIC CAFFE_USE_BLAS)
