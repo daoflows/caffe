@@ -17,6 +17,7 @@
 
 import logging
 import numpy as np
+import pytest
 from utils import L, _test_op
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ def _test_inner_product(data, test_dir, **kwargs):
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.correctness
 def test_forward_InnerProduct(caffe_test_dir):
     """InnerProduct — basic forward tests from original suite."""
     logger.info("Running test_forward_InnerProduct (basic forward tests)")
@@ -66,6 +68,7 @@ def test_forward_InnerProduct(caffe_test_dir):
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductDimensionality:
     """Test InnerProduct with various input tensor dimensions."""
 
@@ -164,6 +167,7 @@ class TestInnerProductDimensionality:
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductAxis:
     """Test the axis parameter including negative indices and axis=0."""
 
@@ -252,6 +256,7 @@ class TestInnerProductAxis:
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductTranspose:
     """Test transpose=True weight layout."""
 
@@ -308,6 +313,7 @@ class TestInnerProductTranspose:
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductNumOutput:
     """Test extreme num_output values."""
 
@@ -361,6 +367,7 @@ class TestInnerProductNumOutput:
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductBatchSize:
     """Test extreme batch sizes."""
 
@@ -414,6 +421,7 @@ class TestInnerProductBatchSize:
 # ──────────────────────────────────────────────
 
 
+@pytest.mark.edge
 class TestInnerProductBiasAndFillers:
     """Test bias_term and weight_filler/bias_filler combinations."""
 
