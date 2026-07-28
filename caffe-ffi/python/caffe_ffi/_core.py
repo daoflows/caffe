@@ -511,20 +511,14 @@ class Net(_Object):
 
     def blob_by_name(self, name: str) -> Blob:
         if self._is_native:
-            try:
-                return _native_method(self, 'blob_by_name')(str(name))
-            except (RuntimeError, AttributeError):
-                raise KeyError(f"Blob '{name}' not found")
+            return _native_method(self, 'blob_by_name')(str(name))
         if name in getattr(self, '_py_blobs', {}):
             return self._py_blobs[name]
         raise KeyError(f"Blob '{name}' not found")
 
     def layer_by_name(self, name: str) -> Layer:
         if self._is_native:
-            try:
-                return _native_method(self, 'layer_by_name')(str(name))
-            except (RuntimeError, AttributeError):
-                raise KeyError(f"Layer '{name}' not found")
+            return _native_method(self, 'layer_by_name')(str(name))
         if name in getattr(self, '_py_layers', {}):
             return self._py_layers[name]
         raise KeyError(f"Layer '{name}' not found")

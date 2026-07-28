@@ -14,6 +14,7 @@
 
 namespace caffe_ffi {
 
+/** Global atomic counter tracking total bytes allocated across all Blobs. */
 extern std::atomic<int64_t> g_total_allocated_bytes;
 
 using namespace tvm::ffi;
@@ -21,11 +22,19 @@ using namespace tvm::ffi;
 class Blob;
 class Layer;
 
+/** Convenience alias: vector of Blob smart pointers. */
 using BlobVec = std::vector<ObjectPtr<Blob>>;
+/** Convenience alias: vector of Layer smart pointers. */
 using LayerVec = std::vector<ObjectPtr<Layer>>;
 
+/** Maximum number of axes (dimensions) a Blob can have. */
 constexpr int kMaxBlobAxes = 32;
 
+/**
+ * @brief Convert a DLPack dtype code to a human-readable string.
+ * @param code DLPack type code (kDLFloat, kDLInt, kDLUInt).
+ * @return Static string name ("float", "int", "uint", or "unknown").
+ */
 inline const char* DTypeCodeToString(uint8_t code) {
   switch (code) {
     case kDLFloat:   return "float";
@@ -35,7 +44,18 @@ inline const char* DTypeCodeToString(uint8_t code) {
   }
 }
 
+/**
+ * @brief CPU memory allocator for TVM FFI Tensors.
+ *
+ * Allocates zero-initialized memory via std::malloc/std::free, tracks total
+ * allocation bytes in g_total_allocated_bytes, and logs allocation/deallocation
+ * events for debugging. Used by NewCPUTensor() to create Blob data/diff tensors.
+ */
 struct CPUMemAlloc {
+  /**
+   * @brief Allocate and zero-initialize CPU memory for a DLTensor.
+   * @param tensor DLTensor whose shape/dtype determine allocation size; data pointer is set on success.
+   */
   void AllocData(DLTensor* tensor) {
     size_t nbytes = tvm::ffi::GetDataSize(*tensor);
     CAFFE_FFI_MEM_LOG << "AllocData: allocating " << nbytes << " bytes"
@@ -52,6 +72,10 @@ struct CPUMemAlloc {
     CAFFE_FFI_MEM_LOG << "AllocData: allocated at " << tensor->data << " (" << nbytes << " bytes, zero-initialized)"
                       << " global_total=" << g_total_allocated_bytes.load(std::memory_order_relaxed) << "B";
   }
+  /**
+   * @brief Free CPU memory previously allocated by AllocData.
+   * @param tensor DLTensor whose data pointer will be freed and reset to nullptr.
+   */
   void FreeData(DLTensor* tensor) {
     if (tensor->data) {
       size_t nbytes = tvm::ffi::GetDataSize(*tensor);
@@ -69,6 +93,7 @@ struct CPUMemAlloc {
   }
 };
 
+/** @return DLDevice descriptor for CPU (device_type=kDLCPU, device_id=0). */
 inline DLDevice CPU() {
   DLDevice dev;
   dev.device_type = kDLCPU;
@@ -76,6 +101,7 @@ inline DLDevice CPU() {
   return dev;
 }
 
+/** @return DLDataType descriptor for float32 (kDLFloat, 32 bits, 1 lane). */
 inline DLDataType Float32() {
   DLDataType dtype;
   dtype.code = kDLFloat;
@@ -84,6 +110,15 @@ inline DLDataType Float32() {
   return dtype;
 }
 
+/**
+ * @brief Create a new float32 CPU Tensor with the given shape.
+ *
+ * Allocates zero-initialized memory via CPUMemAlloc. The returned Tensor owns
+ * its memory and will free it when the last reference is released.
+ *
+ * @param shape Tensor shape (dimensions).
+ * @return New TVM FFI Tensor on CPU with float32 dtype.
+ */
 inline Tensor NewCPUTensor(ShapeView shape) {
   return Tensor::FromNDAlloc(CPUMemAlloc(), shape, Float32(), CPU());
 }

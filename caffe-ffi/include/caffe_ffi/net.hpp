@@ -87,12 +87,12 @@ class Net : public Object {
 
   /**
    * @brief Look up a blob by name.
-   * @throws std::out_of_range if blob_name is not found.
+   * @throws KeyError if blob_name is not found.
    */
   ObjectPtr<Blob> blob_by_name(const std::string& blob_name) const;
   /**
    * @brief Look up a layer by name.
-   * @throws std::out_of_range if layer_name is not found.
+   * @throws KeyError if layer_name is not found.
    */
   ObjectPtr<Layer> layer_by_name(const std::string& layer_name) const;
 
@@ -146,7 +146,19 @@ class Net : public Object {
   Net& operator=(const Net&) = delete;
 };
 
+/**
+ * @brief Read network parameters from a text-format .prototxt file.
+ * @param filename Path to the .prototxt file.
+ * @return Parsed NetParameter protobuf message.
+ * @throws ValueError if the file cannot be read or parsed.
+ */
 caffe::NetParameter ReadNetParamsFromTextFile(const std::string& filename);
+/**
+ * @brief Read network parameters from a binary .caffemodel file.
+ * @param filename Path to the binary .caffemodel file.
+ * @return Parsed NetParameter protobuf message.
+ * @throws ValueError if the file cannot be read or parsed.
+ */
 caffe::NetParameter ReadNetParamsFromBinaryFile(const std::string& filename);
 
 }  // namespace caffe_ffi
