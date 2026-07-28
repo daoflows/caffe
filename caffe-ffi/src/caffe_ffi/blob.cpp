@@ -326,14 +326,26 @@ Array<float> Blob::get_data() const {
   return result;
 }
 
-void Blob::set_data(Array<float> data) {
-  TVM_FFI_ICHECK_EQ(static_cast<int64_t>(data.size()), count())
-      << "Data size mismatch for Blob#" << id_ << ": expected " << count() << ", got " << data.size();
-  float* ptr = cpu_data();
-  CAFFE_FFI_CONTAINER_LOG << "set_data: Blob#" << id_ << " writing " << count() << " elements from Array<float> to " << ptr;
-  for (int64_t i = 0; i < count(); ++i) {
-    ptr[i] = data[i];
+void Blob::set_data(Tensor data) {
+  // Support DLPack zero-copy interop with numpy/PyTorch/etc.
+  TVM_FFI_ICHECK(data.defined()) << "Cannot set_data from undefined Tensor (Blob#" << id_ << ")";
+  TVM_FFI_ICHECK_EQ(data.ndim(), num_axes())
+      << "Tensor ndim mismatch for Blob#" << id_ << ": expected " << num_axes() << ", got " << data.ndim();
+  for (int i = 0; i < data.ndim(); ++i) {
+    TVM_FFI_ICHECK_EQ(data.size(i), shape(i))
+        << "Tensor shape mismatch at axis " << i << " for Blob#" << id_
+        << ": expected " << shape(i) << ", got " << data.size(i);
   }
+  TVM_FFI_ICHECK(data.dtype().code == kDLFloat && data.dtype().bits == 32)
+      << "set_data expects float32 Tensor for Blob#" << id_
+      << ", got dtype code=" << static_cast<int>(data.dtype().code) << " bits=" << data.dtype().bits;
+
+  float* dst = cpu_data();
+  const float* src = static_cast<const float*>(data.data_ptr());
+  int64_t nbytes = count() * sizeof(float);
+  CAFFE_FFI_CONTAINER_LOG << "set_data(Tensor): Blob#" << id_ << " memcpy " << count()
+                          << " elements (" << nbytes << "B) from " << src << " to " << dst;
+  std::memcpy(dst, src, nbytes);
 }
 
 Array<float> Blob::get_diff() const {
@@ -347,14 +359,25 @@ Array<float> Blob::get_diff() const {
   return result;
 }
 
-void Blob::set_diff(Array<float> diff) {
-  TVM_FFI_ICHECK_EQ(static_cast<int64_t>(diff.size()), count())
-      << "Diff size mismatch for Blob#" << id_ << ": expected " << count() << ", got " << diff.size();
-  float* ptr = cpu_diff();
-  CAFFE_FFI_CONTAINER_LOG << "set_diff: Blob#" << id_ << " writing " << count() << " elements from Array<float> to " << ptr;
-  for (int64_t i = 0; i < count(); ++i) {
-    ptr[i] = diff[i];
+void Blob::set_diff(Tensor diff) {
+  TVM_FFI_ICHECK(diff.defined()) << "Cannot set_diff from undefined Tensor (Blob#" << id_ << ")";
+  TVM_FFI_ICHECK_EQ(diff.ndim(), num_axes())
+      << "Tensor ndim mismatch for Blob#" << id_ << " diff: expected " << num_axes() << ", got " << diff.ndim();
+  for (int i = 0; i < diff.ndim(); ++i) {
+    TVM_FFI_ICHECK_EQ(diff.size(i), shape(i))
+        << "Tensor shape mismatch at axis " << i << " for Blob#" << id_ << " diff"
+        << ": expected " << shape(i) << ", got " << diff.size(i);
   }
+  TVM_FFI_ICHECK(diff.dtype().code == kDLFloat && diff.dtype().bits == 32)
+      << "set_diff expects float32 Tensor for Blob#" << id_
+      << ", got dtype code=" << static_cast<int>(diff.dtype().code) << " bits=" << diff.dtype().bits;
+
+  float* dst = cpu_diff();
+  const float* src = static_cast<const float*>(diff.data_ptr());
+  int64_t nbytes = count() * sizeof(float);
+  CAFFE_FFI_CONTAINER_LOG << "set_diff(Tensor): Blob#" << id_ << " memcpy " << count()
+                          << " elements (" << nbytes << "B) from " << src << " to " << dst;
+  std::memcpy(dst, src, nbytes);
 }
 
 int64_t TotalAllocatedBytes() {

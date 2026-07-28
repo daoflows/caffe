@@ -264,6 +264,14 @@ class Blob(_Object):
 
     def set_data(self, data) -> None:
         if self._is_native:
+            # Convert input to numpy float32 array for zero-copy DLPack interop
+            if not isinstance(data, np.ndarray):
+                data = np.array(data, dtype=np.float32)
+            if data.dtype != np.float32:
+                data = data.astype(np.float32)
+            expected_shape = tuple(self.shape)
+            if data.shape != expected_shape:
+                data = data.reshape(expected_shape)
             _native_method(self, 'set_data')(data)
         else:
             self._py_data = np.array(data, dtype=np.float32).reshape(self._py_shape)
@@ -275,6 +283,13 @@ class Blob(_Object):
 
     def set_diff(self, diff) -> None:
         if self._is_native:
+            if not isinstance(diff, np.ndarray):
+                diff = np.array(diff, dtype=np.float32)
+            if diff.dtype != np.float32:
+                diff = diff.astype(np.float32)
+            expected_shape = tuple(self.shape)
+            if diff.shape != expected_shape:
+                diff = diff.reshape(expected_shape)
             _native_method(self, 'set_diff')(diff)
         else:
             self._py_diff = np.array(diff, dtype=np.float32).reshape(self._py_shape)
@@ -393,11 +408,18 @@ class Net(_Object):
             input_map = {}
             for k, v in inputs.items():
                 if isinstance(v, np.ndarray):
-                    input_map[k] = v.flatten().tolist()
-                elif isinstance(v, Blob):
-                    input_map[k] = v.get_data()
-                else:
+                    # Pass numpy array directly for zero-copy DLPack Tensor interop
+                    if v.dtype != np.float32:
+                        v = v.astype(np.float32)
                     input_map[k] = v
+                elif isinstance(v, Blob):
+                    # Use the blob's data tensor directly
+                    input_map[k] = v.to_numpy()
+                elif isinstance(v, (list, tuple)):
+                    # Convert list/tuple to numpy float32 array
+                    input_map[k] = np.array(v, dtype=np.float32)
+                else:
+                    input_map[k] = np.array(v, dtype=np.float32)
             result = _native_method(self, 'Forward')(input_map)
             return {str(k): v for k, v in result.items()}
         return self._py_forward(inputs)

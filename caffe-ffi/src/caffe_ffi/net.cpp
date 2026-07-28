@@ -1,6 +1,7 @@
 #include "caffe_ffi/net.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <set>
@@ -168,30 +169,63 @@ int Net::AppendBottom(const caffe::NetParameter& param, int layer_id,
   return blob_idx;
 }
 
-Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Array<float>>& inputs) {
+Map<String, ObjectPtr<Blob>> Net::Forward(const Map<String, Tensor>& inputs) {
   CAFFE_FFI_NET_LOG << "Forward: input map size=" << inputs.size();
   for (const auto& kv : inputs) {
     const std::string& name = kv.first;
-    const Array<float>& data = kv.second;
-    CAFFE_FFI_NET_LOG << "Forward: feeding input '" << name << "' with " << data.size() << " elements";
+    const Tensor& data = kv.second;
+    CAFFE_FFI_NET_LOG << "Forward: feeding input '" << name << "' with "
+                      << data.numel() << " elements (ndim=" << data.ndim() << ")";
     if (has_blob(name)) {
       ObjectPtr<Blob> blob = blob_by_name(name);
-      const int64_t data_size = static_cast<int64_t>(data.size());
-      if (blob->count() != data_size) {
-        if (blob->count() == 0) {
-          CAFFE_FFI_NET_LOG << "Forward: reshaping uninitialized input blob '" << name << "' to (" << data_size << ")";
-          blob->Reshape(std::vector<int64_t>{data_size});
-        } else {
-          TVM_FFI_ICHECK_EQ(blob->count(), data_size)
-              << "Input blob '" << name << "' has size " << blob->count()
-              << " but input data has size " << data_size;
+      const int64_t data_size = data.numel();
+
+      TVM_FFI_ICHECK(data.defined()) << "Input tensor '" << name << "' is undefined";
+      TVM_FFI_ICHECK(data.dtype().code == kDLFloat && data.dtype().bits == 32)
+          << "Forward input '" << name << "' expects float32 Tensor, got dtype code="
+          << static_cast<int>(data.dtype().code) << " bits=" << data.dtype().bits;
+
+      // Reshape blob if needed (uninitialized or shape mismatch)
+      bool need_reshape = (blob->count() == 0);
+      if (!need_reshape && blob->count() != data_size) {
+        need_reshape = true;
+      }
+      // Also check ndim matches
+      if (!need_reshape && blob->num_axes() != data.ndim()) {
+        need_reshape = true;
+      }
+      for (int i = 0; !need_reshape && i < data.ndim(); ++i) {
+        if (blob->shape(i) != data.size(i)) {
+          need_reshape = true;
+          break;
         }
       }
-      float* ptr = blob->cpu_data();
-      CAFFE_FFI_TENSOR_LOG << "Forward: copying " << data_size << " input elements to " << ptr;
-      for (int64_t i = 0; i < data_size; ++i) {
-        ptr[i] = data[i];
+
+      if (need_reshape) {
+        std::vector<int64_t> shape(data.ndim());
+        for (int i = 0; i < data.ndim(); ++i) {
+          shape[i] = data.size(i);
+        }
+        CAFFE_FFI_NET_LOG << "Forward: reshaping input blob '" << name << "' to "
+                          << [&]() {
+                               std::ostringstream oss;
+                               oss << "(";
+                               for (size_t i = 0; i < shape.size(); ++i) {
+                                 if (i > 0) oss << ",";
+                                 oss << shape[i];
+                               }
+                               oss << ")";
+                               return oss.str();
+                             }();
+        blob->Reshape(shape);
       }
+
+      float* dst = blob->cpu_data();
+      const float* src = static_cast<const float*>(data.data_ptr());
+      int64_t nbytes = data_size * sizeof(float);
+      CAFFE_FFI_TENSOR_LOG << "Forward: memcpy " << data_size << " input elements ("
+                           << nbytes << "B) to blob " << name << " at " << dst;
+      std::memcpy(dst, src, nbytes);
     } else {
       TVM_FFI_ICHECK(has_blob(name))
           << "Forward: input blob '" << name << "' not found in network '" << name_ << "'. "

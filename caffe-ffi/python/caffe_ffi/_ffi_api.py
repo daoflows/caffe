@@ -32,27 +32,35 @@ def _find_lib_path() -> Optional[Path]:
         ]
     
     search_dirs = [
-        base_dir / "build" / "Release",
-        base_dir / "build" / "lib",
-        base_dir / "build",
+        base_dir / "build-ninja" / "Release",
+        base_dir / "build-ninja" / "lib",
+        base_dir / "build-ninja",
         base_dir / "build-cmake" / "Release",
         base_dir / "build-cmake" / "lib",
         base_dir / "build-cmake",
         base_dir / "build-wheel" / "Release",
         base_dir / "build-wheel" / "lib",
         base_dir / "build-wheel",
+        base_dir / "build" / "Release",
+        base_dir / "build" / "lib",
+        base_dir / "build",
         Path(__file__).parent,
         base_dir,
     ]
     
+    found = []
     for search_dir in search_dirs:
         if search_dir.exists():
             for lib_name in lib_names:
                 lib_path = search_dir / lib_name
                 if lib_path.exists():
-                    return lib_path
+                    found.append(lib_path)
     
-    return None
+    if not found:
+        return None
+    
+    # Return the most recently modified DLL (handles multiple build dirs)
+    return max(found, key=lambda p: p.stat().st_mtime)
 
 
 _lib_path = _find_lib_path()

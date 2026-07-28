@@ -22,7 +22,16 @@ if(EXISTS "${TVM_FFI_DIR}/CMakeLists.txt")
   set(TVM_FFI_USE_LIBBACKTRACE OFF CACHE BOOL "Disable libbacktrace" FORCE)
   set(TVM_FFI_BACKTRACE_ON_SEGFAULT OFF CACHE BOOL "Disable segfault backtrace" FORCE)
   add_subdirectory("${TVM_FFI_DIR}" tvm-ffi EXCLUDE_FROM_ALL)
+  if(NOT TARGET tvm_ffi::shared)
+    add_library(tvm_ffi::shared ALIAS tvm_ffi_shared)
+  endif()
 else()
+  find_package(Python COMPONENTS Interpreter REQUIRED)
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m tvm_ffi.config --cmakedir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE tvm_ffi_ROOT
+  )
   find_package(tvm_ffi CONFIG REQUIRED)
 endif()
 
@@ -34,9 +43,76 @@ endif()
 message(STATUS "Using Protobuf version: ${Protobuf_VERSION}")
 find_package(Threads REQUIRED)
 
+# ── BLAS detection (OpenBLAS via conda or system) ──
 set(BLAS_FOUND OFF)
 set(BLAS_LIBRARIES "")
 set(BLAS_INCLUDE_DIRS "")
+
+# First try CMake's FindBLAS
+find_package(BLAS QUIET)
+if(BLAS_FOUND)
+  message(STATUS "Found BLAS via FindBLAS: ${BLAS_LIBRARIES}")
+  # FindBLAS doesn't set include dirs - locate cblas.h manually
+  find_path(BLAS_INCLUDE_DIRS
+    NAMES cblas.h
+    PATHS
+      "${CMAKE_PREFIX_PATH}/include"
+      "$ENV{CONDA_PREFIX}/Library/include"
+      "$ENV{CONDA_PREFIX}/include"
+    PATH_SUFFIXES openblas
+    NO_DEFAULT_PATH
+  )
+  if(NOT BLAS_INCLUDE_DIRS)
+    # Fallback: derive from library path
+    foreach(_blas_lib ${BLAS_LIBRARIES})
+      get_filename_component(_blas_lib_dir "${_blas_lib}" DIRECTORY)
+      get_filename_component(_blas_root "${_blas_lib_dir}" DIRECTORY)
+      if(EXISTS "${_blas_root}/include/cblas.h")
+        set(BLAS_INCLUDE_DIRS "${_blas_root}/include")
+        break()
+      elseif(EXISTS "${_blas_root}/include/openblas/cblas.h")
+        set(BLAS_INCLUDE_DIRS "${_blas_root}/include/openblas")
+        break()
+      endif()
+    endforeach()
+  endif()
+  if(BLAS_INCLUDE_DIRS)
+    message(STATUS "BLAS include dir: ${BLAS_INCLUDE_DIRS}")
+  else()
+    message(WARNING "BLAS library found but cblas.h not found - disabling BLAS")
+    set(BLAS_FOUND OFF)
+    set(BLAS_LIBRARIES "")
+  endif()
+endif()
+
+if(NOT BLAS_FOUND)
+  # Manual search for OpenBLAS (common in conda environments)
+  find_path(OPENBLAS_INCLUDE_DIR
+    NAMES cblas.h openblas_config.h
+    PATHS
+      "${CMAKE_PREFIX_PATH}/include"
+      "$ENV{CONDA_PREFIX}/Library/include"
+      "$ENV{CONDA_PREFIX}/include"
+    PATH_SUFFIXES openblas
+    NO_DEFAULT_PATH
+  )
+  find_library(OPENBLAS_LIBRARY
+    NAMES openblas openblas.lib
+    PATHS
+      "${CMAKE_PREFIX_PATH}/lib"
+      "$ENV{CONDA_PREFIX}/Library/lib"
+      "$ENV{CONDA_PREFIX}/lib"
+    NO_DEFAULT_PATH
+  )
+  if(OPENBLAS_INCLUDE_DIR AND OPENBLAS_LIBRARY)
+    set(BLAS_FOUND ON)
+    set(BLAS_LIBRARIES "${OPENBLAS_LIBRARY}")
+    set(BLAS_INCLUDE_DIRS "${OPENBLAS_INCLUDE_DIR}")
+    message(STATUS "Found OpenBLAS: ${OPENBLAS_LIBRARY} (include: ${OPENBLAS_INCLUDE_DIR})")
+  else()
+    message(STATUS "BLAS not found - building without BLAS acceleration (will use fallback C++ implementations)")
+  endif()
+endif()
 
 find_package(Python COMPONENTS Interpreter QUIET)
 
@@ -87,6 +163,8 @@ add_library(_caffe_ffi SHARED
   ${CAFFE_FFI_PROTO_SRCS}
 )
 
+tvm_ffi_configure_target(_caffe_ffi LINK_SHARED ON LINK_HEADER ON MSVC_FLAGS ON DEBUG_SYMBOL ON)
+
 set_target_properties(_caffe_ffi PROPERTIES
   PREFIX ""
   OUTPUT_NAME "_caffe_ffi"
@@ -128,24 +206,17 @@ if(CAFFE_FFI_ENABLE_BACKTRACE)
   target_compile_definitions(_caffe_ffi PUBLIC CAFFE_FFI_ENABLE_BACKTRACE)
 endif()
 if(BLAS_FOUND OR BLAS_LIBRARIES)
-  target_compile_definitions(_caffe_ffi PUBLIC CAFFE_USE_BLAS)
+  target_compile_definitions(_caffe_ffi PUBLIC CAFFE_USE_BLAS HAVE_CBLAS_H)
 endif()
 
 if(MSVC)
-  target_compile_definitions(_caffe_ffi PUBLIC
-    WIN32_LEAN_AND_MEAN
-    _CRT_SECURE_NO_WARNINGS
-    _SCL_SECURE_NO_WARNINGS
-    NOMINMAX
-  )
-  target_compile_options(_caffe_ffi PRIVATE /W3 /bigobj /Zi)
+  target_compile_options(_caffe_ffi PRIVATE /W3)
 else()
   target_compile_options(_caffe_ffi PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
 target_link_libraries(_caffe_ffi PUBLIC
   tvm_ffi::header
-  tvm_ffi::shared
   protobuf::libprotobuf
   Threads::Threads
 )
@@ -174,20 +245,29 @@ if(MSVC)
     endif()
   endfunction()
 
-  get_target_property(_tvm_ffi_shared_LOC tvm_ffi_shared IMPORTED_LOCATION_RELEASE)
-  if(NOT _tvm_ffi_shared_LOC)
-    get_target_property(_tvm_ffi_shared_LOC tvm_ffi_shared IMPORTED_LOCATION)
-  endif()
-  if(NOT _tvm_ffi_shared_LOC AND TARGET tvm_ffi_shared)
-    set(_tvm_ffi_shared_LOC "$<TARGET_FILE:tvm_ffi_shared>")
-  endif()
-  if(_tvm_ffi_shared_LOC)
-    add_custom_command(TARGET _caffe_ffi POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${_tvm_ffi_shared_LOC}"
-        "$<TARGET_FILE_DIR:_caffe_ffi>"
-      COMMENT "Copying tvm_ffi shared library to output directory"
-    )
+  add_custom_command(TARGET _caffe_ffi POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:tvm_ffi::shared>"
+      "$<TARGET_FILE_DIR:_caffe_ffi>"
+    COMMENT "Copying tvm_ffi shared library to output directory"
+  )
+
+  # Copy OpenBLAS DLL if available
+  if(BLAS_FOUND AND BLAS_LIBRARIES)
+    foreach(_blas_lib ${BLAS_LIBRARIES})
+      get_filename_component(_blas_lib_dir "${_blas_lib}" DIRECTORY)
+      file(GLOB _openblas_dlls "${_blas_lib_dir}/../bin/libopenblas*.dll" "${_blas_lib_dir}/../bin/openblas*.dll")
+      foreach(_dll ${_openblas_dlls})
+        if(EXISTS "${_dll}")
+          add_custom_command(TARGET _caffe_ffi POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${_dll}"
+              "$<TARGET_FILE_DIR:_caffe_ffi>"
+            COMMENT "Copying OpenBLAS DLL to output directory"
+          )
+        endif()
+      endforeach()
+    endforeach()
   endif()
 
   set(_protobuf_dll_dirs "${Protobuf_DIR}/../../../bin" "${Protobuf_DIR}/../../bin")

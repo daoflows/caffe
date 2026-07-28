@@ -46,11 +46,11 @@ class Net : public Object {
 
   /**
    * @brief Run forward pass through all layers.
-   * @param inputs Map from input blob name to data as float array (will be copied to blobs).
+   * @param inputs Map from input blob name to data as Tensor (numpy zero-copy interop via DLPack).
    * @return Map from output blob name to output Blob (zero-copy reference).
    */
   Map<String, ObjectPtr<Blob>> Forward(
-      const Map<String, Array<float>>& inputs = {});
+      const Map<String, Tensor>& inputs = {});
 
   /**
    * @brief Run forward pass from layer start to layer end (inclusive).

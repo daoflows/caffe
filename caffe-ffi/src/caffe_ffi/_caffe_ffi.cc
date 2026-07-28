@@ -164,6 +164,8 @@ TVM_FFI_STATIC_INIT_BLOCK() {
       .def("set_data", &Blob::set_data)
       .def("get_diff", &Blob::get_diff)
       .def("set_diff", &Blob::set_diff)
+      .def("data_tensor", &Blob::data_tensor)
+      .def("diff_tensor", &Blob::diff_tensor)
       .def("name", &Blob::name)
       .def("set_name", &Blob::set_name)
       .def("construction_backtrace", &Blob::construction_backtrace);

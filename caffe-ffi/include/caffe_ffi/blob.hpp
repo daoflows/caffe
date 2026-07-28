@@ -118,12 +118,12 @@ class Blob : public Object {
 
   /** @brief Get data as an Array<float> (FFI convenience, copies data). */
   Array<float> get_data() const;
-  /** @brief Set data from an Array<float> (FFI convenience, copies data). */
-  void set_data(Array<float> data);
+  /** @brief Set data from a TVM FFI Tensor (supports numpy zero-copy interop via DLPack, direct memcpy). */
+  void set_data(Tensor data);
   /** @brief Get diff as an Array<float> (FFI convenience, copies data). */
   Array<float> get_diff() const;
-  /** @brief Set diff from an Array<float> (FFI convenience, copies data). */
-  void set_diff(Array<float> diff);
+  /** @brief Set diff from a TVM FFI Tensor (supports numpy zero-copy interop via DLPack, direct memcpy). */
+  void set_diff(Tensor diff);
 
   /** @brief Set the blob name. */
   void set_name(const std::string& name) { name_ = name; }
