@@ -319,6 +319,127 @@ endif()
 
 enable_testing()
 
+# ---- C++ unit tests ----
+file(GLOB CAFFE_FFI_CPP_TEST_SRCS
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/*.cpp"
+)
+
+add_executable(caffe_ffi_tests
+  ${CAFFE_FFI_CPP_TEST_SRCS}
+)
+
+target_include_directories(caffe_ffi_tests PRIVATE
+  "${CAFFE_FFI_INCLUDE_DIR}"
+  "${CAFFE_FFI_GEN_PROTO_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp"
+  "${Protobuf_INCLUDE_DIRS}"
+)
+if(BLAS_INCLUDE_DIRS)
+  target_include_directories(caffe_ffi_tests PRIVATE "${BLAS_INCLUDE_DIRS}")
+endif()
+
+target_compile_definitions(caffe_ffi_tests PRIVATE
+  CPU_ONLY
+  CAFFE_FFI_VERSION="${PROJECT_VERSION}"
+)
+if(CAFFE_FFI_ENABLE_DEBUG_LOG)
+  target_compile_definitions(caffe_ffi_tests PRIVATE CAFFE_FFI_ENABLE_DEBUG_LOG)
+endif()
+if(CAFFE_FFI_ENABLE_BACKTRACE)
+  target_compile_definitions(caffe_ffi_tests PRIVATE CAFFE_FFI_ENABLE_BACKTRACE)
+endif()
+if(BLAS_FOUND OR BLAS_LIBRARIES)
+  target_compile_definitions(caffe_ffi_tests PRIVATE CAFFE_USE_BLAS HAVE_CBLAS_H)
+endif()
+
+if(MSVC)
+  target_compile_options(caffe_ffi_tests PRIVATE /W3)
+else()
+  target_compile_options(caffe_ffi_tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
+endif()
+
+target_link_libraries(caffe_ffi_tests PRIVATE
+  _caffe_ffi
+  tvm_ffi::shared
+  protobuf::libprotobuf
+  Threads::Threads
+)
+if(BLAS_LIBRARIES)
+  target_link_libraries(caffe_ffi_tests PRIVATE ${BLAS_LIBRARIES})
+endif()
+if(MSVC)
+  target_link_libraries(caffe_ffi_tests PRIVATE DbgHelp.lib)
+endif()
+
+if(MSVC)
+  # Copy required DLLs to test output directory
+  add_custom_command(TARGET caffe_ffi_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:tvm_ffi::shared>"
+      "$<TARGET_FILE_DIR:caffe_ffi_tests>"
+    COMMENT "Copying tvm_ffi DLL for tests"
+  )
+  add_custom_command(TARGET caffe_ffi_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "$<TARGET_FILE:_caffe_ffi>"
+      "$<TARGET_FILE_DIR:caffe_ffi_tests>"
+    COMMENT "Copying _caffe_ffi DLL for tests"
+  )
+  # Copy protobuf DLLs
+  set(_protobuf_dll_dirs "${Protobuf_DIR}/../../../bin" "${Protobuf_DIR}/../../bin")
+  foreach(_dll_dir ${_protobuf_dll_dirs})
+    file(GLOB _protobuf_dlls "${_dll_dir}/libprotobuf*.dll" "${_dll_dir}/libprotoc*.dll")
+    foreach(_dll ${_protobuf_dlls})
+      if(EXISTS "${_dll}")
+        add_custom_command(TARGET caffe_ffi_tests POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_dll}"
+            "$<TARGET_FILE_DIR:caffe_ffi_tests>"
+          COMMENT "Copying ${_dll} for tests"
+        )
+      endif()
+    endforeach()
+  endforeach()
+  # Copy abseil DLLs
+  get_filename_component(_absl_dir "${Protobuf_DIR}" DIRECTORY)
+  set(_absl_dll_dirs "${_absl_dir}/bin" "${_absl_dir}/../bin")
+  if(DEFINED ENV{CONDA_PREFIX})
+    list(APPEND _absl_dll_dirs "$ENV{CONDA_PREFIX}/Library/bin")
+  endif()
+  foreach(_dll_dir ${_absl_dll_dirs})
+    file(GLOB _absl_dlls "${_dll_dir}/absl_*.dll" "${_dll_dir}/abseil*.dll")
+    foreach(_dll ${_absl_dlls})
+      if(EXISTS "${_dll}")
+        add_custom_command(TARGET caffe_ffi_tests POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_dll}"
+            "$<TARGET_FILE_DIR:caffe_ffi_tests>"
+          COMMENT "Copying ${_dll} for tests"
+        )
+      endif()
+    endforeach()
+  endforeach()
+  # Copy OpenBLAS DLL
+  if(BLAS_FOUND AND BLAS_LIBRARIES)
+    foreach(_blas_lib ${BLAS_LIBRARIES})
+      get_filename_component(_blas_lib_dir "${_blas_lib}" DIRECTORY)
+      file(GLOB _openblas_dlls "${_blas_lib_dir}/../bin/libopenblas*.dll" "${_blas_lib_dir}/../bin/openblas*.dll")
+      foreach(_dll ${_openblas_dlls})
+        if(EXISTS "${_dll}")
+          add_custom_command(TARGET caffe_ffi_tests POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              "${_dll}"
+              "$<TARGET_FILE_DIR:caffe_ffi_tests>"
+            COMMENT "Copying OpenBLAS DLL for tests"
+          )
+        endif()
+      endforeach()
+    endforeach()
+  endif()
+endif()
+
+add_test(NAME caffe_ffi_cpp_tests COMMAND caffe_ffi_tests)
+
 install(TARGETS _caffe_ffi
   LIBRARY DESTINATION caffe_ffi
   RUNTIME DESTINATION caffe_ffi
