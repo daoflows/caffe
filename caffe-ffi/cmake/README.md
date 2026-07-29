@@ -7,8 +7,8 @@
 | 模块文件 | 职责 | 提供的变量/函数 | 依赖模块 |
 |---------|------|----------------|---------|
 | **Options.cmake** | 构建选项定义 | `CAFFE_FFI_ENABLE_DEBUG_LOG`、`CAFFE_FFI_ENABLE_BACKTRACE` 等选项变量 | 无 |
-| **FindBLAS.cmake** | BLAS/OpenBLAS 检测 | `BLAS_FOUND`、`BLAS_LIBRARIES`、`BLAS_INCLUDE_DIRS` | 无 |
-| **Dependencies.cmake** | 第三方依赖查找 | tvm_ffi、Protobuf、Threads、Python 依赖配置 | FindBLAS（内部include） |
+| **DetectBLAS.cmake** | BLAS/OpenBLAS 检测 | `BLAS_FOUND`、`BLAS_LIBRARIES`、`BLAS_INCLUDE_DIRS` | 无 |
+| **Dependencies.cmake** | 第三方依赖查找 | tvm_ffi、Protobuf、Threads、Python 依赖配置 | DetectBLAS（内部include） |
 | **CompilerConfig.cmake** | 公共编译配置函数 | `caffe_ffi_configure_target(target VISIBILITY <PUBLIC\|PRIVATE\|INTERFACE>)` | Dependencies（使用其查找的依赖变量） |
 | **ProtoCompile.cmake** | Protobuf 文件编译 | `CAFFE_FFI_PROTO_SRCS`、`CAFFE_FFI_GEN_PROTO_DIR` | Dependencies |
 | **TargetBuild.cmake** | 主库 `_caffe_ffi` 构建 | `_caffe_ffi` 共享库目标 | CompilerConfig、ProtoCompile |
@@ -20,7 +20,7 @@
 
 ```cmake
 include(Options)         # 1. 首先定义构建选项
-include(Dependencies)    # 2. 查找第三方依赖（内部include FindBLAS）
+include(Dependencies)    # 2. 查找第三方依赖（内部include DetectBLAS）
 include(CompilerConfig)  # 3. 定义公共编译配置函数（必须在TargetBuild/Tests之前）
 include(ProtoCompile)    # 4. 编译Proto文件
 include(TargetBuild)     # 5. 构建主库目标

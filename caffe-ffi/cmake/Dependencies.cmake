@@ -1,5 +1,5 @@
 # Dependencies.cmake - 第三方依赖查找与配置
-# TVM FFI、Protobuf、Threads 依赖在此查找；BLAS 检测委托给 FindBLAS.cmake
+# TVM FFI、Protobuf、Threads 依赖在此查找；BLAS 检测委托给 DetectBLAS.cmake
 
 set(TVM_FFI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../tvm-ffi")
 if(EXISTS "${TVM_FFI_DIR}/CMakeLists.txt")
@@ -27,6 +27,6 @@ endif()
 message(STATUS "Using Protobuf version: ${Protobuf_VERSION}")
 find_package(Threads REQUIRED)
 
-include(FindBLAS)
+include(DetectBLAS)
 
 find_package(Python COMPONENTS Interpreter QUIET)
