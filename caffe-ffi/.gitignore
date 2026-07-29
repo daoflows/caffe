@@ -16,3 +16,4 @@ python/caffe/
 *_pb2.pyi
 _test_*.py
 *.whl
+wheelhouse/

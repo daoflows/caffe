@@ -154,6 +154,14 @@ class Net : public Object {
  */
 caffe::NetParameter ReadNetParamsFromTextFile(const std::string& filename);
 /**
+ * @brief Parse network parameters from a text-format prototxt string.
+ * @param text Text-format protobuf string.
+ * @return Parsed NetParameter protobuf message.
+ * @throws ValueError if the string cannot be parsed.
+ * @note Defined in the DLL to avoid cross-DLL protobuf static initialization issues.
+ */
+caffe::NetParameter ReadNetParamsFromTextString(const std::string& text);
+/**
  * @brief Read network parameters from a binary .caffemodel file.
  * @param filename Path to the binary .caffemodel file.
  * @return Parsed NetParameter protobuf message.

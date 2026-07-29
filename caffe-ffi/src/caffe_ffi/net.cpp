@@ -35,7 +35,6 @@ void Net::Init(const caffe::NetParameter& param) {
   std::set<std::string> available_blobs;
   std::map<std::string, int> blob_name_to_idx;
   int num_layers = param.layer_size();
-  CAFFE_FFI_NET_LOG << "Init: allocating arrays for " << num_layers << " layers";
   layers_.resize(num_layers);
   layer_names_.resize(num_layers);
   bottom_vecs_.resize(num_layers);
@@ -51,10 +50,8 @@ void Net::Init(const caffe::NetParameter& param) {
   net_output_blob_names_.clear();
 
   int num_inputs = param.input_size();
-  CAFFE_FFI_NET_LOG << "Init: processing " << num_inputs << " network inputs";
   for (int i = 0; i < num_inputs; ++i) {
     const std::string& blob_name = param.input(i);
-    CAFFE_FFI_NET_LOG << "Init: input[" << i << "] = '" << blob_name << "'";
     blob_name_to_idx[blob_name] = static_cast<int>(blobs_.size());
     blob_names_.push_back(blob_name);
     blob_names_index_[blob_name] = static_cast<int>(blobs_.size());
@@ -65,7 +62,6 @@ void Net::Init(const caffe::NetParameter& param) {
     net_input_blob_indices_.push_back(static_cast<int>(blobs_.size()) - 1);
     net_input_blob_names_.push_back(blob_name);
     if (param.input_shape_size() > i) {
-      CAFFE_FFI_NET_LOG << "Init: reshaping input '" << blob_name << "' from input_shape";
       blobs_.back()->Reshape(param.input_shape(i));
     } else if (param.input_dim_size() > 0) {
       int num_dims = param.input_dim_size() / num_inputs;
@@ -73,43 +69,36 @@ void Net::Init(const caffe::NetParameter& param) {
       for (int d = 0; d < num_dims; ++d) {
         dims[d] = param.input_dim(i * num_dims + d);
       }
-      CAFFE_FFI_NET_LOG << "Init: reshaping input '" << blob_name << "' from legacy input_dim (dims=" << num_dims << ")";
       blobs_.back()->Reshape(dims);
     }
   }
 
   for (int layer_id = 0; layer_id < num_layers; ++layer_id) {
     const caffe::LayerParameter& layer_param = param.layer(layer_id);
-    CAFFE_FFI_LAYER_LOG << "Init: layer[" << layer_id << "] = '" << layer_param.name() << "' type='" << layer_param.type() << "'";
     layers_[layer_id] = LayerRegistry::CreateLayer(layer_param);
     layer_names_[layer_id] = layer_param.name();
     layer_names_index_[layer_param.name()] = layer_id;
 
     int num_bottom = layer_param.bottom_size();
     bottom_vecs_[layer_id].resize(num_bottom);
-    CAFFE_FFI_LAYER_LOG << "Init: layer '" << layer_param.name() << "' has " << num_bottom << " bottom blobs";
     for (int bottom_id = 0; bottom_id < num_bottom; ++bottom_id) {
       AppendBottom(param, layer_id, bottom_id, &available_blobs, &blob_name_to_idx);
     }
 
     int num_top = layer_param.top_size();
     top_vecs_[layer_id].resize(num_top);
-    CAFFE_FFI_LAYER_LOG << "Init: layer '" << layer_param.name() << "' has " << num_top << " top blobs";
     for (int top_id = 0; top_id < num_top; ++top_id) {
       AppendTop(param, layer_id, top_id, &available_blobs, &blob_name_to_idx);
       if (num_inputs == 0 && layer_id == 0) {
-        CAFFE_FFI_NET_LOG << "Init: implicit input from layer[0].top[" << top_id << "] = '" << layer_param.top(top_id) << "'";
         net_input_blobs_.push_back(blobs_[blob_name_to_idx[layer_param.top(top_id)]].get());
         net_input_blob_indices_.push_back(blob_name_to_idx[layer_param.top(top_id)]);
         net_input_blob_names_.push_back(layer_param.top(top_id));
       }
     }
 
-    CAFFE_FFI_LAYER_LOG << "Init: calling SetUp for layer '" << layer_param.name() << "'";
     layers_[layer_id]->SetUp(bottom_vecs_[layer_id], top_vecs_[layer_id]);
 
     auto& layer_blobs = layers_[layer_id]->blobs();
-    CAFFE_FFI_LAYER_LOG << "Init: layer '" << layer_param.name() << "' has " << layer_blobs.size() << " parameter blobs";
     for (int param_id = 0; param_id < layer_param.param_size(); ++param_id) {
       if (param_id < static_cast<int>(layer_blobs.size())) {
         layer_blobs[param_id]->set_name(layer_param.param(param_id).name());
@@ -117,13 +106,11 @@ void Net::Init(const caffe::NetParameter& param) {
     }
   }
 
-  CAFFE_FFI_NET_LOG << "Init: collecting output blobs (" << available_blobs.size() << " remaining)";
   for (const auto& blob_name : available_blobs) {
     int blob_idx = blob_name_to_idx[blob_name];
     net_output_blobs_.push_back(blobs_[blob_idx].get());
     net_output_blob_indices_.push_back(blob_idx);
     net_output_blob_names_.push_back(blob_name);
-    CAFFE_FFI_NET_LOG << "Init: output blob '" << blob_name << "' (idx=" << blob_idx << ")";
   }
   CAFFE_FFI_NET_LOG << "Init: network '" << name_ << "' initialized: "
                     << layers_.size() << " layers, " << blobs_.size() << " blobs, "
@@ -384,9 +371,13 @@ caffe::NetParameter ReadNetParamsFromTextFile(const std::string& filename) {
   CAFFE_FFI_CHECK_RUNTIME(ifs.is_open()) << "Could not open file: " << filename;
   std::stringstream ss;
   ss << ifs.rdbuf();
+  return ReadNetParamsFromTextString(ss.str());
+}
+
+caffe::NetParameter ReadNetParamsFromTextString(const std::string& text) {
   caffe::NetParameter param;
-  bool success = google::protobuf::TextFormat::ParseFromString(ss.str(), &param);
-  CAFFE_FFI_CHECK_RUNTIME(success) << "Failed to parse NetParameter from file: " << filename;
+  bool success = google::protobuf::TextFormat::ParseFromString(text, &param);
+  CAFFE_FFI_CHECK_RUNTIME(success) << "Failed to parse NetParameter from text string";
   return param;
 }
 

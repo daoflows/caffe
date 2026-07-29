@@ -46,6 +46,9 @@ struct TestRegistry {
 
   int RunAll() {
     for (auto& t : tests) {
+      std::printf("[ RUN      ] %s.%s\n", t.suite_name.c_str(),
+                  t.test_name.c_str());
+      std::fflush(stdout);
       try {
         t.func();
         std::printf("[  PASSED  ] %s.%s\n", t.suite_name.c_str(),

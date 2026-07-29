@@ -52,24 +52,17 @@ def _native_method(obj, name: str):
     """Call a C++ registered method on an object, bypassing Python overrides."""
     if not _NATIVE_MODE:
         raise RuntimeError(f"Native method '{name}' not available in Python-only mode")
-    info = getattr(type(obj), '__tvm_ffi_type_info__', None)
-    if info is not None:
-        for m in info.methods:
-            if m.name == name:
-                bound = m.func
-                if not m.is_static:
-                    import types
-                    bound = types.MethodType(m.func, obj)
-                return bound
-    for parent_cls in type(obj).__mro__[1:]:
-        if name in parent_cls.__dict__:
-            attr = parent_cls.__dict__[name]
-            if callable(attr):
-                import types
-                if isinstance(attr, (staticmethod, classmethod)):
-                    return attr.__get__(obj, type(obj))
-                return types.MethodType(attr, obj)
-            return attr
+    # Search through MRO for the method in C++ type info
+    for cls in type(obj).__mro__:
+        info = getattr(cls, '__tvm_ffi_type_info__', None)
+        if info is not None:
+            for m in info.methods:
+                if m.name == name:
+                    bound = m.func
+                    if not m.is_static:
+                        import types
+                        bound = types.MethodType(m.func, obj)
+                    return bound
     raise AttributeError(f"Native method '{name}' not found on {type(obj).__name__}")
 
 

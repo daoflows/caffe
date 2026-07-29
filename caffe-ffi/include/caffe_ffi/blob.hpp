@@ -130,6 +130,9 @@ class Blob : public Object {
   /** @brief Get the blob name. */
   std::string name() const { return name_; }
 
+  /** @brief Get unique blob ID (for debugging). */
+  int64_t id() const { return id_; }
+
   /** @brief Get the construction backtrace string (for debugging memory issues). */
   std::string construction_backtrace() const { return construct_bt_; }
 

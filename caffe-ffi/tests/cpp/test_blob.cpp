@@ -182,3 +182,85 @@ TEST(BlobTest, UpdateSubtractsDiffFromData) {
   EXPECT_NEAR(static_cast<double>(b.cpu_data()[0]), 9.0, 1e-6);
   EXPECT_NEAR(static_cast<double>(b.cpu_data()[1]), 18.0, 1e-6);
 }
+
+// ---- ID and backtrace tests ----
+
+TEST(BlobTest, IdIsUniqueAndPositive) {
+  ObjectPtr<Blob> b1 = make_object<Blob>();
+  ObjectPtr<Blob> b2 = make_object<Blob>();
+  EXPECT_TRUE(b1->id() > 0);
+  EXPECT_TRUE(b2->id() > 0);
+  EXPECT_TRUE(b2->id() > b1->id());
+}
+
+TEST(BlobTest, ConstructionBacktraceNotEmpty) {
+  Blob b;
+  std::string bt = b.construction_backtrace();
+  EXPECT_FALSE(bt.empty());
+}
+
+// ---- Negative axis tests ----
+
+TEST(BlobTest, NegativeAxisIndex) {
+  std::vector<int64_t> shape = {2, 3, 4, 5};
+  Blob b(shape);
+  EXPECT_EQ(b.shape(-1), 5);
+  EXPECT_EQ(b.shape(-2), 4);
+  EXPECT_EQ(b.shape(-3), 3);
+  EXPECT_EQ(b.shape(-4), 2);
+  EXPECT_EQ(b.count(-1), 5);
+  EXPECT_EQ(b.count(-2), 4 * 5);
+}
+
+// ---- Diff round-trip test ----
+
+TEST(BlobTest, GetDiffSetDiffRoundTrip) {
+  std::vector<int64_t> shape = {2, 2};
+  Blob b(shape);
+  float* diff = b.cpu_diff();
+  diff[0] = 0.5f;
+  diff[1] = 1.5f;
+  diff[2] = 2.5f;
+  diff[3] = 3.5f;
+
+  Array<float> arr = b.get_diff();
+  EXPECT_EQ(static_cast<int64_t>(arr.size()), 4);
+  EXPECT_NEAR(static_cast<double>(arr[0]), 0.5, 1e-6);
+  EXPECT_NEAR(static_cast<double>(arr[3]), 3.5, 1e-6);
+}
+
+// ---- Shape as TVM FFI Shape ----
+
+TEST(BlobTest, ShapeReturnsTVMShape) {
+  std::vector<int64_t> shape = {2, 3};
+  Blob b(shape);
+  Shape s = b.shape();
+  EXPECT_EQ(s.size(), static_cast<size_t>(2));
+  EXPECT_EQ(s[0], 2);
+  EXPECT_EQ(s[1], 3);
+}
+
+// ---- Error handling tests ----
+
+TEST(BlobTest, NegativeDimensionThrows) {
+  Blob b;
+  std::vector<int64_t> bad_shape = {2, -3, 4};
+  bool threw = false;
+  try {
+    b.Reshape(bad_shape);
+  } catch (const std::exception&) {
+    threw = true;
+  }
+  EXPECT_TRUE(threw);
+}
+
+// ---- Legacy shape accessor with missing dimensions ----
+
+TEST(BlobTest, LegacyShapeAccessorsWithMissingDims) {
+  std::vector<int64_t> shape = {8};
+  Blob b(shape);
+  EXPECT_EQ(b.num(), 8);
+  EXPECT_EQ(b.channels(), 1);
+  EXPECT_EQ(b.height(), 1);
+  EXPECT_EQ(b.width(), 1);
+}
