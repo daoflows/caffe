@@ -9,7 +9,7 @@
 | **Options.cmake** | 构建选项定义 | `CAFFE_FFI_ENABLE_DEBUG_LOG`、`CAFFE_FFI_ENABLE_BACKTRACE` 等选项变量 | 无 |
 | **FindBLAS.cmake** | BLAS/OpenBLAS 检测 | `BLAS_FOUND`、`BLAS_LIBRARIES`、`BLAS_INCLUDE_DIRS` | 无 |
 | **Dependencies.cmake** | 第三方依赖查找 | tvm_ffi、Protobuf、Threads、Python 依赖配置 | FindBLAS（内部include） |
-| **CompilerConfig.cmake** | 公共编译配置函数 | `caffe_ffi_configure_target(target VISIBILITY <PUBLIC\|PRIVATE>)` | Dependencies（使用其查找的依赖变量） |
+| **CompilerConfig.cmake** | 公共编译配置函数 | `caffe_ffi_configure_target(target VISIBILITY <PUBLIC\|PRIVATE\|INTERFACE>)` | Dependencies（使用其查找的依赖变量） |
 | **ProtoCompile.cmake** | Protobuf 文件编译 | `CAFFE_FFI_PROTO_SRCS`、`CAFFE_FFI_GEN_PROTO_DIR` | Dependencies |
 | **TargetBuild.cmake** | 主库 `_caffe_ffi` 构建 | `_caffe_ffi` 共享库目标 | CompilerConfig、ProtoCompile |
 | **WindowsDllCopy.cmake** | Windows DLL 复制 | `caffe_ffi_copy_runtime_dlls()`、`caffe_ffi_copy_target_dll()` 等函数；自动配置主库DLL复制 | TargetBuild（主库目标存在后） |
@@ -41,18 +41,26 @@ include(Install)         # 8. 最后配置安装规则
 统一设置目标的 include 目录、编译定义、编译选项、链接库：
 
 ```cmake
-caffe_ffi_configure_target(&lt;target_name&gt; VISIBILITY &lt;PUBLIC|PRIVATE&gt;)
+caffe_ffi_configure_target(&lt;target_name&gt; VISIBILITY &lt;PUBLIC|PRIVATE|INTERFACE&gt;)
 ```
 
 **参数**：
-- `target_name`: 要配置的 CMake 目标名称
-- `VISIBILITY`: 目标属性的可见性（主库用 PUBLIC，测试用 PRIVATE）
+- `target_name`: 要配置的 CMake 目标名称（必须已通过 add_library/add_executable 创建）
+- `VISIBILITY`: 目标属性的可见性
+  - `PUBLIC`：主库使用，属性传递给链接者
+  - `PRIVATE`：测试/可执行文件使用，属性不传递
+  - `INTERFACE`：仅INTERFACE目标使用
 
 **自动配置的内容**：
 - Include 目录：`CAFFE_FFI_INCLUDE_DIR`、`CAFFE_FFI_GEN_PROTO_DIR`、`Protobuf_INCLUDE_DIRS`、条件添加 `BLAS_INCLUDE_DIRS`
-- 编译定义：`CPU_ONLY`、`CAFFE_FFI_VERSION`，条件添加调试/回溯/BLAS相关宏
+- 编译定义：`CPU_ONLY`（条件）、`CAFFE_FFI_VERSION`，条件添加调试/回溯/BLAS相关宏
 - 编译选项：MSVC `/W3`，GCC/Clang `-Wall -Wextra -Wno-unused-parameter`
 - 链接库：`protobuf::libprotobuf`、`Threads::Threads`，条件添加 BLAS 和 DbgHelp.lib
+
+**错误提示**：函数内置参数校验，以下情况会给出友好的 FATAL_ERROR：
+- 未提供 `target_name`
+- `VISIBILITY` 参数值无效（不是 PUBLIC/PRIVATE/INTERFACE）
+- 目标不存在（未提前创建）
 
 ### DLL 复制函数（仅 MSVC）
 
@@ -85,10 +93,15 @@ caffe_ffi_copy_target_dll(&lt;target&gt; &lt;dependency_target&gt;)
 ## 扩展指南
 
 添加新模块时：
-1. 确保模块职责单一，文件不超过 80 行（特殊情况除外）
+1. 确保模块职责单一，文件不超过 80 行（特殊情况如 WindowsDllCopy.cmake 因平台适配可放宽）
 2. 在本 README 中添加模块说明
 3. 在根 `CMakeLists.txt` 中按正确顺序添加 `include()`
 4. 如果提供公共函数，在"公共函数使用说明"章节添加文档
+5. **公共函数必须添加参数校验**：
+   - 检查必需参数是否提供
+   - 检查枚举参数值合法性（如 VISIBILITY 必须是 PUBLIC/PRIVATE/INTERFACE）
+   - 检查 TARGET 是否存在（如果函数操作已定义的目标）
+   - 使用 `message(FATAL_ERROR ...)` 给出清晰的错误信息，包含函数名、用法示例
 
 ## 原子化原则
 

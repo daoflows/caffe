@@ -12,7 +12,30 @@
 #   caffe_ffi_copy_runtime_dlls(target)              - 聚合函数：复制所有运行时依赖 DLLs
 
 if(MSVC)
+  # 内部辅助宏：校验目标参数
+  macro(_caffe_ffi_validate_copy_target target_name func_name)
+    if(NOT target_name)
+      message(FATAL_ERROR
+        "${func_name}(): 缺少必需参数 <target_name>\n"
+        "  用法: ${func_name}(<target_name>)"
+      )
+    endif()
+    if(NOT TARGET ${target_name})
+      message(FATAL_ERROR
+        "${func_name}(): 目标 '${target_name}' 不存在\n"
+        "  请确保在调用此函数之前已通过 add_library() 或 add_executable() 创建该目标"
+      )
+    endif()
+  endmacro()
+
   function(caffe_ffi_copy_dll_if_exists target_name dll_path)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_dll_if_exists")
+    if(NOT dll_path)
+      message(FATAL_ERROR
+        "caffe_ffi_copy_dll_if_exists(): 缺少必需参数 <dll_path>\n"
+        "  用法: caffe_ffi_copy_dll_if_exists(<target_name> <dll_path>)"
+      )
+    endif()
     if(dll_path AND EXISTS "${dll_path}")
       add_custom_command(TARGET ${target_name} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -24,6 +47,18 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_target_dll target_name dependency_target)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_target_dll")
+    if(NOT dependency_target)
+      message(FATAL_ERROR
+        "caffe_ffi_copy_target_dll(): 缺少必需参数 <dependency_target>\n"
+        "  用法: caffe_ffi_copy_target_dll(<target_name> <dependency_target>)"
+      )
+    endif()
+    if(NOT TARGET ${dependency_target})
+      message(FATAL_ERROR
+        "caffe_ffi_copy_target_dll(): 依赖目标 '${dependency_target}' 不存在"
+      )
+    endif()
     add_custom_command(TARGET ${target_name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:${dependency_target}>"
@@ -33,6 +68,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_tvm_ffi_dll target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_tvm_ffi_dll")
     add_custom_command(TARGET ${target_name} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:tvm_ffi::shared>"
@@ -42,6 +78,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_openblas_dlls target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_openblas_dlls")
     if(BLAS_FOUND AND BLAS_LIBRARIES)
       foreach(_blas_lib ${BLAS_LIBRARIES})
         get_filename_component(_blas_lib_dir "${_blas_lib}" DIRECTORY)
@@ -61,6 +98,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_protobuf_dlls target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_protobuf_dlls")
     set(_protobuf_dll_dirs "${Protobuf_DIR}/../../../bin" "${Protobuf_DIR}/../../bin")
     foreach(_dll_dir ${_protobuf_dll_dirs})
       file(GLOB _protobuf_dlls "${_dll_dir}/libprotobuf*.dll" "${_dll_dir}/libprotoc*.dll")
@@ -78,6 +116,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_abseil_dlls target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_abseil_dlls")
     get_filename_component(_absl_dir "${Protobuf_DIR}" DIRECTORY)
     set(_absl_dll_dirs "${_absl_dir}/bin" "${_absl_dir}/../bin")
     if(DEFINED ENV{CONDA_PREFIX})
@@ -99,6 +138,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_utf8_dlls target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_utf8_dlls")
     get_filename_component(_absl_dir "${Protobuf_DIR}" DIRECTORY)
     set(_utf8_dirs "${_absl_dir}/bin" "${_absl_dir}/../bin")
     foreach(_dll_dir ${_utf8_dirs})
@@ -117,6 +157,7 @@ if(MSVC)
   endfunction()
 
   function(caffe_ffi_copy_runtime_dlls target_name)
+    _caffe_ffi_validate_copy_target("${target_name}" "caffe_ffi_copy_runtime_dlls")
     caffe_ffi_copy_tvm_ffi_dll(${target_name})
     caffe_ffi_copy_openblas_dlls(${target_name})
     caffe_ffi_copy_protobuf_dlls(${target_name})
