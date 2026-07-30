@@ -31,6 +31,16 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 - 阶段二→三：为什么需要caffe-ffi？caffe-slim的pycaffe绑定是传统方式，缺乏类型安全、零拷贝能力和现代Python特性
 - 阶段三→四：为什么提升到libs独立库？在vendor内孵化验证完成后，独立库便于独立版本管理、独立Docker环境、独立CI/CD，也便于其他项目引用
 
+**未来版本规划**：
+
+| 规划版本 | 阶段定位 | 核心目标 | 关键里程碑 |
+|---------|---------|---------|-----------|
+| v0.2.0 (Beta) | 功能扩展期 | 扩展层覆盖与性能优化 | 补齐常用推理层至40+，性能benchmark体系，CI/CD流水线（GitHub Actions），自动测试覆盖Linux/Windows/macOS三平台 |
+| v0.3.0 (RC) | 发布准备期 | 包发布与API稳定化 | PyPI/Conda正式发布，API冻结与稳定性保证，向后兼容策略，完整用户文档与API参考，模型兼容性验证（经典Caffe模型） |
+| v1.0.0 (Stable) | 生产就绪期 | 稳定可用 | API稳定保证（SemVer），生产级性能与内存安全，完整示例与教程，与caffe-slim的互操作桥接层完成 |
+
+> 当前v0.1.0 (Alpha)已完成独立库基础设施建设，后续版本将在独立库`libs/caffe-ffi/`中迭代，vendor/caffe/区域不再包含caffe-ffi源码。详细进展请参考`../../libs/caffe-ffi/CHANGELOG.md`。
+
 ---
 
 ## 模块详解
