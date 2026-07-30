@@ -12,7 +12,24 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 |------|------|-----------|------|
 | caffex | 1.0.0 | 无特定要求 | BVLC Caffe原始fork，完整训练/推理框架（参考源码） |
 | caffe-slim | 1.0.0-slim | >=3.10 (支持3.10-3.13) | CPU-only精简推理版，TVM Relax算子支持 |
-| caffe-ffi | 0.1.0 (Alpha) | >=3.14 | 基于TVM FFI原生对象系统的现代Python绑定（推荐使用） |
+| caffe-ffi | 0.1.0 (Alpha) 【已迁移至 libs/caffe-ffi（独立库）】 | >=3.14 | 基于TVM FFI原生对象系统的现代Python绑定（推荐使用） |
+
+---
+
+## 架构演进历程
+
+| 阶段 | 模块 | 时间/版本 | 定位 | 关键演进 |
+|------|------|----------|------|---------|
+| 阶段一 | caffex | v1.0.0 (BVLC原始) | 完整深度学习框架（参考基准） | BVLC Caffe fork，CUDA GPU支持，75+层，完整训练/推理，作为源码参考保留 |
+| 阶段二 | caffe-slim | v1.0.0-slim | CPU-only精简推理版 | 移除CUDA/GPU依赖，集成tvm-ffi header-only，TVM Relax算子支持，scikit-build-core现代构建，Python 3.10-3.13支持 |
+| 阶段三 | caffe-ffi (vendor内孵化) | v0.1.0-dev | TVM FFI现代绑定实验 | 基于TVM FFI原生对象系统实现双类模型(XxxObj/Xxx ObjectRef)，零拷贝DLPack张量通路，类型化异常体系，三层日志架构，Python 3.14+要求，在vendor/caffe/内快速迭代验证 |
+| 阶段四 | caffe-ffi (libs独立库) | v0.1.0 (Alpha) | 独立成熟库【当前推荐】 | 从vendor提升为独立第一方库，20+层实现，conda打包支持，Docker开发环境(caffe-ffi-jupyter)，CMakePresets.json，独立AGENTS.md，40 C++测试+65 Python测试全通过，WSL/Linux/Windows跨平台 |
+
+**演进逻辑说明**：
+
+- 阶段一→二：为什么需要caffe-slim？BVLC Caffe依赖繁重（CUDA/OpenCV/LevelDB/LMDB等），现代推理场景只需要CPU轻量版本
+- 阶段二→三：为什么需要caffe-ffi？caffe-slim的pycaffe绑定是传统方式，缺乏类型安全、零拷贝能力和现代Python特性
+- 阶段三→四：为什么提升到libs独立库？在vendor内孵化验证完成后，独立库便于独立版本管理、独立Docker环境、独立CI/CD，也便于其他项目引用
 
 ---
 
@@ -80,6 +97,8 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 
 **功能定位**：基于TVM FFI原生对象系统的现代Caffe Python绑定，提供高性能、类型安全的Python接口。
 
+> **重要说明**：caffe-ffi 已迁移为独立第一方库，位于项目根目录 `libs/caffe-ffi/`（相对路径 `../../libs/caffe-ffi/`）。本目录下的 `caffe-ffi/` 历史快照已删除，后续开发、安装和使用请使用独立库位置。
+
 **技术规格**：
 - Python要求：>=3.14
 - C++标准：C++17
@@ -104,9 +123,12 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 
 **构建系统**：CMake + scikit-build-core（9个模块化.cmake文件：CompilerConfig、Dependencies、DetectBLAS、Install、Options、ProtoCompile、TargetBuild、Tests、WindowsDllCopy）
 
-**环境配置**：提供 `environment.yml` conda环境配置文件
+**环境配置**：提供 `environment.yml` conda环境配置文件，位于 `../../libs/caffe-ffi/environment.yml`（从 `vendor/caffe/` 目录访问的相对路径）。
 
 **安装验证**：
+
+> **路径说明**：从 `vendor/caffe/` 目录到 caffe-ffi 的相对路径是 `../../libs/caffe-ffi/`。请先进入该目录或确保环境已正确激活后再执行验证命令。
+
 ```bash
 python -c "import caffe_ffi; print(caffe_ffi.__version__)"
 ```
@@ -136,19 +158,23 @@ python -c "import caffe_ffi; print(caffe_ffi.__version__)"
 
 ### 使用conda（推荐）
 
+> **路径说明**：以下命令均在 `vendor/caffe/` 目录下执行。caffe-ffi 已迁移至独立库位置 `../../libs/caffe-ffi/`。
+
 ```bash
 # 创建conda环境
-conda env create -f caffe-ffi/environment.yml
+conda env create -f ../../libs/caffe-ffi/environment.yml
 
 # 激活环境
 conda activate caffe-ffi
 
-# 进入caffe-ffi目录
-cd caffe-ffi
+# 进入caffe-ffi独立库目录
+cd ../../libs/caffe-ffi
 
 # 可编辑模式安装
 pip install -e .
 ```
+
+**安装说明**：caffe-ffi 已迁移为独立库，位于项目根目录 `libs/caffe-ffi/`。从 `vendor/caffe/` 目录访问时需使用相对路径 `../../libs/caffe-ffi/`。
 
 **国内用户提示**：可取消 `environment.yml` 中清华/阿里镜像源注释以加速依赖下载。
 
@@ -346,7 +372,7 @@ python caffe-slim/scripts/gen_proto.py
 ```bash
 protoc --proto_path=caffe-slim/protos \
   --cpp_out=caffe-slim/src/caffe/proto \
-  --python_out=caffe-ffi/python/caffe_ffi/caffe/proto \
+  --python_out=../../libs/caffe-ffi/python/caffe_ffi/caffe/proto \
   caffe-slim/protos/caffe.proto
 ```
 
@@ -385,30 +411,13 @@ caffe/
 │   ├── scripts/
 │   │   └── gen_proto.py   # protobuf代码生成脚本
 │   └── tests/
-├── caffe-ffi/             # TVM FFI现代绑定 (v0.1.0 Alpha)【推荐】
-│   ├── pyproject.toml
-│   ├── environment.yml    # conda环境配置
-│   ├── CMakeLists.txt
-│   ├── cmake/             # 9个模块化.cmake文件
-│   ├── include/           # C++头文件（双类对象模型）
-│   ├── src/               # C++实现（层注册、零拷贝张量、异常体系）
-│   ├── python/
-│   │   └── caffe_ffi/     # Python包
-│   │       ├── __init__.py
-│   │       ├── _core.py   # Blob/Layer/Net核心类
-│   │       ├── blob.py
-│   │       ├── layer.py
-│   │       ├── net.py
-│   │       ├── io.py
-│   │       └── tools/     # memory/debug工具
-│   ├── tests/             # C++和Python测试
-│   ├── examples/          # 示例脚本（MLP/benchmark/零拷贝demo等）
-│   └── docs/              # 优化报告、技术文档
 ├── docs/
 │   └── adding-operators.md  # 添加新算子四步法指南
 ├── .agents/               # AI协作者规范容器
 └── .trae/                 # Spec规划文档
 ```
+
+> **注意**：caffe-ffi 已迁移至独立库位置 `../../libs/caffe-ffi/`（从 `vendor/caffe/` 目录访问的相对路径）。
 
 ---
 
@@ -449,7 +458,7 @@ caffex模块保留BVLC Caffe原始BSD 2-Clause许可证。
 
 ### 参考链接
 - BVLC Caffe官网：[http://caffe.berkeleyvision.org](http://caffe.berkeleyvision.org)
-- caffe-ffi优化报告：[caffe-ffi/docs/OPTIMIZATION_REPORT.md](caffe-ffi/docs/OPTIMIZATION_REPORT.md)
+- caffe-ffi优化报告：[OPTIMIZATION_REPORT.md](../../libs/caffe-ffi/docs/OPTIMIZATION_REPORT.md)
 - 添加新算子指南：[docs/adding-operators.md](docs/adding-operators.md)
 
 ### AI协作者说明
@@ -458,7 +467,7 @@ caffex模块保留BVLC Caffe原始BSD 2-Clause许可证。
 - `.trae/`：Spec规划文档目录，包含项目规划和演进路径
 
 ### 示例代码
-更多示例请参考 `caffe-ffi/examples/` 目录：
+更多示例请参考 `../../libs/caffe-ffi/examples/` 目录（独立库位置）：
 - `create_and_run_mlp.py` - MLP网络创建与推理
 - `benchmark_performance.py` - 性能基准测试
 - `zero_copy_vs_copy_demo.py` - 零拷贝vs拷贝性能对比演示
