@@ -11,8 +11,8 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 | 模块 | 版本 | Python要求 | 定位 |
 |------|------|-----------|------|
 | caffex | 1.0.0 | 无特定要求 | BVLC Caffe原始fork，完整训练/推理框架（参考源码） |
-| caffe-slim | 1.0.0-slim | &gt;=3.10 (支持3.10-3.13) | CPU-only精简推理版，TVM Relax算子支持 |
-| caffe-ffi | 0.1.0 (Alpha) | &gt;=3.14 | 基于TVM FFI原生对象系统的现代Python绑定（推荐使用） |
+| caffe-slim | 1.0.0-slim | >=3.10 (支持3.10-3.13) | CPU-only精简推理版，TVM Relax算子支持 |
+| caffe-ffi | 0.1.0 (Alpha) | >=3.14 | 基于TVM FFI原生对象系统的现代Python绑定（推荐使用） |
 
 ---
 
@@ -46,7 +46,7 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 **功能定位**：CPU-only精简推理版Caffe，移除GPU依赖，专为推理场景优化。
 
 **技术规格**：
-- Python要求：&gt;=3.10（支持3.10-3.13）
+- Python要求：>=3.10（支持3.10-3.13）
 - C++标准：C++17
 
 **核心特性**：
@@ -63,7 +63,7 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 - tvm-ffi（header-only）
 - protobuf
 - BLAS
-- numpy&gt;=1.24
+- numpy>=1.24
 
 **构建系统**：CMake + scikit-build-core
 
@@ -81,7 +81,7 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 **功能定位**：基于TVM FFI原生对象系统的现代Caffe Python绑定，提供高性能、类型安全的Python接口。
 
 **技术规格**：
-- Python要求：&gt;=3.14
+- Python要求：>=3.14
 - C++标准：C++17
 
 **核心特性**：
@@ -95,12 +95,12 @@ BVLC Caffe 深度学习框架的演进版本，包含原始fork、CPU精简推�
 8. **已支持约20层**：accuracy、batch_norm、bias、concat、conv、dropout、eltwise、elu、flatten、inner_product、input、pooling、prelu、relu、reshape、scale、sigmoid、softmax、softmax_loss、tanh
 
 **关键依赖**：
-- numpy&gt;=2.3
-- protobuf&gt;=7.0.0
+- numpy>=2.3
+- protobuf>=7.0.0
 - apache-tvm-ffi
-- scikit-build-core&gt;=0.10
-- cmake&gt;=3.26
-- ninja&gt;=1.13
+- scikit-build-core>=0.10
+- cmake>=3.26
+- ninja>=1.13
 
 **构建系统**：CMake + scikit-build-core（9个模块化.cmake文件：CompilerConfig、Dependencies、DetectBLAS、Install、Options、ProtoCompile、TargetBuild、Tests、WindowsDllCopy）
 
@@ -118,14 +118,14 @@ python -c "import caffe_ffi; print(caffe_ffi.__version__)"
 | 维度 | caffex | caffe-slim | caffe-ffi |
 |------|--------|------------|-----------|
 | 版本 | 1.0.0 | 1.0.0-slim | 0.1.0 (Alpha) |
-| Python要求 | 无特定要求 | &gt;=3.10 (3.10-3.13) | &gt;=3.14 |
+| Python要求 | 无特定要求 | >=3.10 (3.10-3.13) | >=3.14 |
 | C++标准 | C++11 | C++17 | C++17 |
-| GPU支持 | ✅ CUDA/cuDNN | ❌ CPU-only | ❌ CPU-only |
-| 训练支持 | ✅ 完整训练 | ❌ 仅推理 | ❌ 仅推理 |
+| GPU支持 | 支持 CUDA/cuDNN | 不支持 (CPU-only) | 不支持 (CPU-only) |
+| 训练支持 | 支持 完整训练 | 不支持 仅推理 | 不支持 仅推理 |
 | 层数 | 75+层 | 精简 | 约20层 |
-| TVM FFI集成 | ❌ | ✅ header-only | ✅ 原生对象系统 |
-| 零拷贝张量 | ❌ | ❌ | ✅ DLPack 1000x+加速 |
-| 类型化异常 | ❌ | ❌ | ✅ |
+| TVM FFI集成 | 无 | 有 header-only | 有 原生对象系统 |
+| 零拷贝张量 | 无 | 无 | 有 DLPack 1000x+加速 |
+| 类型化异常 | 无 | 无 | 有 |
 | 构建系统 | 传统CMake | CMake + scikit-build-core | CMake + scikit-build-core（模块化） |
 | 测试覆盖 | - | - | 188+测试用例 |
 | 推荐场景 | 源码参考/GPU训练 | 轻量推理/Python 3.10-3.13 | 现代Python绑定/高性能推理 |
@@ -425,7 +425,7 @@ caffe/
 - **内存监控与泄漏检测**：`live_blob_count()`/`total_allocated_bytes()`/`memory_info()`全局API
 - **FindBLAS递归Bug修复**：修复CMake FindBLAS在某些环境下的递归调用问题
 - **Python 3.14适配**：caffe-slim pycaffe添加py314兼容性patch；caffe-ffi原生支持Python 3.14+
-- **scikit-build-core构建迁移**：从传统setuptools迁移到scikit-build-core&gt;=0.10现代构建系统
+- **scikit-build-core构建迁移**：从传统setuptools迁移到scikit-build-core>=0.10现代构建系统
 
 ---
 
